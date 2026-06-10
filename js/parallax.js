@@ -6,9 +6,24 @@
 
   /* ---- scroll parallax: background layers + tagged foreground elements ---- */
   var layers = Array.prototype.slice.call(document.querySelectorAll(".px-layer"));
-  var tagged = Array.prototype.slice.call(document.querySelectorAll("[data-px]"));
+  var tagged = Array.prototype.slice.call(document.querySelectorAll("[data-px]")).map(function (el) {
+    return { el: el, depth: parseFloat(el.dataset.px) || 0, top: 0, height: 1 };
+  });
   var mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
   var ticking = false;
+
+  // document-space position, independent of any applied transform
+  function docTop(el) {
+    var t = 0;
+    while (el) { t += el.offsetTop; el = el.offsetParent; }
+    return t;
+  }
+  function measure() {
+    tagged.forEach(function (it) {
+      it.top = docTop(it.el);
+      it.height = it.el.offsetHeight || 1;
+    });
+  }
 
   function apply() {
     ticking = false;
@@ -25,9 +40,13 @@
       layer.style.transform = "translate3d(" + tx + "px," + ty + "px,0)";
     });
 
-    tagged.forEach(function (el) {
-      var depth = parseFloat(el.dataset.px) || 0;
-      el.style.transform = "translate3d(0," + y * depth * -0.35 + "px,0)";
+    // viewport-relative drift: zero when the element is centered on screen,
+    // clamped so it can never collide with neighbouring sections
+    var viewCenter = y + window.innerHeight / 2;
+    tagged.forEach(function (it) {
+      var delta = viewCenter - (it.top + it.height / 2);
+      var ty = Math.max(-70, Math.min(70, delta * it.depth * 0.25));
+      it.el.style.transform = "translate3d(0," + ty + "px,0)";
     });
 
     // keep easing while the mouse drift settles
@@ -44,6 +63,9 @@
   }
 
   if (!reduceMotion) {
+    measure();
+    window.addEventListener("resize", function () { measure(); requestTick(); });
+    window.addEventListener("load", function () { measure(); requestTick(); });
     window.addEventListener("scroll", requestTick, { passive: true });
 
     // subtle pointer parallax on devices with a fine pointer

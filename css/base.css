@@ -22,7 +22,7 @@
 
 [hidden] { display: none !important; }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; background: var(--bg); }
 
 body {
   font-family: var(--font-body);
