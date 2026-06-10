@@ -74,6 +74,12 @@
       </div>
     </section>
 
+    <!-- ===== Cart tab ===== -->
+    <section class="tab-panel" id="panel-cart" data-panel hidden>
+      <div class="context-banner" id="cartContext"></div>
+      <div id="cartBody" class="stack"></div>
+    </section>
+
     <!-- ===== Profiles tab ===== -->
     <section class="tab-panel" id="panel-profiles" data-panel hidden>
       <div class="context-banner" id="profilesContext"></div>
@@ -96,6 +102,7 @@
   <!-- ===== Bottom nav ===== -->
   <nav class="bottom-nav" aria-label="Main">
     <button type="button" class="nav-item active" data-tab="check"><span>🔍</span>Check</button>
+    <button type="button" class="nav-item" data-tab="cart"><span>🧺<b class="nav-badge" id="cartBadge" hidden></b></span>Cart</button>
     <button type="button" class="nav-item" data-tab="profiles"><span>👥</span>Profiles</button>
     <button type="button" class="nav-item" data-tab="groups"><span>🛒</span>Group&nbsp;Buy</button>
   </nav>

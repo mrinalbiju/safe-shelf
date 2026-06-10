@@ -66,52 +66,52 @@
 
   // Demo shelf (nutrition per 100 g/ml)
   var CATALOG = [
-    { id: "p1",  name: "Crunchy Peanut Butter", emoji: "🥜", category: "Spreads",
+    { id: "p1", price: 199,  name: "Crunchy Peanut Butter", emoji: "🥜", category: "Spreads",
       allergens: ["peanuts"], ingredients: "roasted peanuts, groundnut oil, salt",
       nutrition: { sugar: 6.5, sodium: 420, satFat: 9.5, protein: 25 } },
-    { id: "p2",  name: "Full-Cream Milk", emoji: "🥛", category: "Dairy",
+    { id: "p2", price: 74,  name: "Full-Cream Milk", emoji: "🥛", category: "Dairy",
       allergens: ["milk"], ingredients: "whole milk",
       nutrition: { sugar: 4.8, sodium: 44, satFat: 2.4, protein: 3.3 } },
-    { id: "p3",  name: "White Sandwich Bread", emoji: "🍞", category: "Bakery",
+    { id: "p3", price: 45,  name: "White Sandwich Bread", emoji: "🍞", category: "Bakery",
       allergens: ["wheat", "soy"], ingredients: "maida, water, sugar, yeast, soy lecithin, salt",
       nutrition: { sugar: 5.2, sodium: 480, satFat: 0.8, protein: 8.5 } },
-    { id: "p4",  name: "Instant Masala Noodles", emoji: "🍜", category: "Snacks",
+    { id: "p4", price: 14,  name: "Instant Masala Noodles", emoji: "🍜", category: "Snacks",
       allergens: ["wheat"], ingredients: "wheat flour, palm oil, salt, spice mix, malt extract",
       nutrition: { sugar: 2.1, sodium: 1150, satFat: 8.9, protein: 9.0 } },
-    { id: "p5",  name: "Dark Chocolate 70%", emoji: "🍫", category: "Confectionery",
+    { id: "p5", price: 150,  name: "Dark Chocolate 70%", emoji: "🍫", category: "Confectionery",
       allergens: ["milk", "treenuts"], ingredients: "cocoa mass, sugar, cocoa butter, butterfat, may contain praline",
       nutrition: { sugar: 24, sodium: 20, satFat: 24, protein: 7.8 } },
-    { id: "p6",  name: "Honey Oat Granola Bar", emoji: "🍯", category: "Snacks",
+    { id: "p6", price: 40,  name: "Honey Oat Granola Bar", emoji: "🍯", category: "Snacks",
       allergens: ["treenuts", "wheat"], ingredients: "oats, honey, almonds, wheat crisps, marzipan pieces",
       nutrition: { sugar: 28, sodium: 140, satFat: 3.2, protein: 8.0 } },
-    { id: "p7",  name: "Soy Sauce", emoji: "🍶", category: "Condiments",
+    { id: "p7", price: 95,  name: "Soy Sauce", emoji: "🍶", category: "Condiments",
       allergens: ["soy", "wheat"], ingredients: "water, soybeans, wheat, salt",
       nutrition: { sugar: 4.0, sodium: 5490, satFat: 0, protein: 8.1 } },
-    { id: "p8",  name: "Prawn Crackers", emoji: "🍤", category: "Snacks",
+    { id: "p8", price: 85,  name: "Prawn Crackers", emoji: "🍤", category: "Snacks",
       allergens: ["shellfish"], ingredients: "tapioca starch, scampi extract, salt",
       nutrition: { sugar: 1.2, sodium: 980, satFat: 12, protein: 2.1 } },
-    { id: "p9",  name: "Plain Rolled Oats", emoji: "🥣", category: "Breakfast",
+    { id: "p9", price: 190,  name: "Plain Rolled Oats", emoji: "🥣", category: "Breakfast",
       allergens: [], ingredients: "100% wholegrain rolled oats",
       nutrition: { sugar: 0.9, sodium: 2, satFat: 1.2, protein: 13.5 } },
-    { id: "p10", name: "Hummus Classic", emoji: "🫓", category: "Spreads",
+    { id: "p10", price: 149, name: "Hummus Classic", emoji: "🫓", category: "Spreads",
       allergens: ["sesame"], ingredients: "chickpeas, tahini, olive oil, garlic, salt",
       nutrition: { sugar: 0.5, sodium: 380, satFat: 2.4, protein: 7.4 } },
-    { id: "p11", name: "Greek Yogurt", emoji: "🍦", category: "Dairy",
+    { id: "p11", price: 60, name: "Greek Yogurt", emoji: "🍦", category: "Dairy",
       allergens: ["milk"], ingredients: "milk, live cultures",
       nutrition: { sugar: 3.6, sodium: 36, satFat: 3.1, protein: 9.0 } },
-    { id: "p12", name: "Salted Potato Chips", emoji: "🥔", category: "Snacks",
+    { id: "p12", price: 20, name: "Salted Potato Chips", emoji: "🥔", category: "Snacks",
       allergens: [], ingredients: "potatoes, vegetable oil, salt",
       nutrition: { sugar: 0.6, sodium: 520, satFat: 4.8, protein: 6.5 } },
-    { id: "p13", name: "Tomato Ketchup", emoji: "🍅", category: "Condiments",
+    { id: "p13", price: 120, name: "Tomato Ketchup", emoji: "🍅", category: "Condiments",
       allergens: ["celery"], ingredients: "tomato paste, sugar, vinegar, salt, celery extract",
       nutrition: { sugar: 22, sodium: 900, satFat: 0.1, protein: 1.2 } },
-    { id: "p14", name: "Almond Milk (Unsweetened)", emoji: "🌰", category: "Dairy alternatives",
+    { id: "p14", price: 299, name: "Almond Milk (Unsweetened)", emoji: "🌰", category: "Dairy alternatives",
       allergens: ["treenuts"], ingredients: "water, almonds (2.3%), calcium, sea salt",
       nutrition: { sugar: 0.1, sodium: 50, satFat: 0.1, protein: 0.5 } },
-    { id: "p15", name: "Dried Apricots", emoji: "🍑", category: "Dried fruit",
+    { id: "p15", price: 220, name: "Dried Apricots", emoji: "🍑", category: "Dried fruit",
       allergens: ["sulphites"], ingredients: "apricots, preservative (sulphur dioxide / e220)",
       nutrition: { sugar: 38, sodium: 8, satFat: 0.1, protein: 3.4 } },
-    { id: "p16", name: "Diet Cola", emoji: "🥤", category: "Beverages",
+    { id: "p16", price: 40, name: "Diet Cola", emoji: "🥤", category: "Beverages",
       allergens: [], ingredients: "carbonated water, colour, sweeteners, caffeine",
       nutrition: { sugar: 0, sodium: 12, satFat: 0, protein: 0 } }
   ];
@@ -267,9 +267,11 @@
       encodeURIComponent(barcode) +
       "?fields=product_name,brands,allergens_tags,ingredients_text,nutriments,image_small_url";
     return fetch(url).then(function (res) {
+      if (res.status === 404) return null; // OFF answers 404 for unknown products — that's "not found", not a network error
       if (!res.ok) throw new Error("network");
       return res.json();
     }).then(function (data) {
+      if (!data) return null;
       if (data.status !== 1 || !data.product) return null;
       var p = data.product;
       var nut = p.nutriments || {};
@@ -278,9 +280,10 @@
         .filter(Boolean);
       return {
         id: "off-" + barcode,
+        code: String(barcode),
         name: (p.product_name || "Unknown product") + (p.brands ? " — " + p.brands : ""),
         emoji: "📦",
-        category: "Open Food Facts",
+        category: "Scanned product",
         allergens: allergens,
         ingredients: p.ingredients_text || "",
         nutrition: {
@@ -293,6 +296,49 @@
         source: "Open Food Facts"
       };
     });
+  }
+
+  /* =================== Market prices (Open Prices + FX) =================== */
+
+  // Crowd-reported retail prices from Open Prices (prices.openfoodfacts.org).
+  // Prefers INR entries; otherwise converts the latest foreign price via ECB rates.
+  function fetchPrice(barcode) {
+    var base = "https://prices.openfoodfacts.org/api/v1/prices?product_code=" +
+      encodeURIComponent(barcode) + "&order_by=-date&size=1";
+
+    function describe(item) {
+      var city = "";
+      if (item.location) {
+        var name = item.location.osm_name || item.location.osm_display_name || "";
+        city = String(name).split(",")[0].trim();
+      }
+      return [city, item.date].filter(Boolean).join(", ");
+    }
+
+    return fetchJsonWithTimeout(base + "&currency=INR", 10000).then(function (d) {
+      var item = d && d.items && d.items[0];
+      if (item && item.price != null) {
+        return { amount: Math.round(item.price * 100) / 100,
+          note: "market price" + (describe(item) ? " · " + describe(item) : "") };
+      }
+      // no INR report — take the latest in any currency and convert
+      return fetchJsonWithTimeout(base, 10000).then(function (d2) {
+        var it = d2 && d2.items && d2.items[0];
+        if (!it || it.price == null) return null;
+        if (it.currency === "INR") {
+          return { amount: Math.round(it.price * 100) / 100,
+            note: "market price" + (describe(it) ? " · " + describe(it) : "") };
+        }
+        return fetchJsonWithTimeout("https://api.frankfurter.app/latest?amount=" +
+          encodeURIComponent(it.price) + "&from=" + encodeURIComponent(it.currency) + "&to=INR", 10000)
+          .then(function (fx) {
+            var inr = fx && fx.rates && fx.rates.INR;
+            if (inr == null) return null;
+            return { amount: Math.round(inr),
+              note: "≈ from " + it.currency + " " + it.price + (describe(it) ? " · " + describe(it) : "") };
+          }).catch(function () { return null; });
+      });
+    }).catch(function () { return null; });
   }
 
   function fetchJsonWithTimeout(url, ms) {
@@ -370,6 +416,7 @@
     evaluate: evaluate,
     evaluateGroup: evaluateGroup,
     lookupBarcode: lookupBarcode,
+    fetchPrice: fetchPrice,
     searchProducts: searchProducts,
     load: load,
     save: save,

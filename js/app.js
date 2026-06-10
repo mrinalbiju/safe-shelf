@@ -27,6 +27,39 @@
     return group.memberIds.map(getUser).filter(Boolean);
   }
 
+  /* ---- cart helpers ---- */
+  // The active cart follows the shopping context: group cart during a group
+  // session, otherwise the current user's personal cart.
+  function activeCart() {
+    var g = activeGroup();
+    if (g) { g.cart = g.cart || []; return g.cart; }
+    var u = currentUser();
+    if (u) { u.cart = u.cart || []; return u.cart; }
+    return null;
+  }
+  function cartContextLabel() {
+    var g = activeGroup();
+    if (g) return "🛒 " + g.name + " (group)";
+    var u = currentUser();
+    return u ? u.emoji + " " + u.name + " (personal)" : "";
+  }
+  // stable identity: barcode/catalog id when we have one, else the name
+  function cartKeyFor(product) {
+    if (product.id && product.id.indexOf("manual-") !== 0) return product.id;
+    return "name:" + String(product.name || "").toLowerCase().trim();
+  }
+  function findInCart(cart, product) {
+    var key = cartKeyFor(product);
+    var name = String(product.name || "").toLowerCase().trim();
+    return cart.findIndex(function (it) {
+      if (it.key) return it.key === key;
+      return String(it.name || "").toLowerCase().trim() === name; // pre-cart-feature group items
+    });
+  }
+  function inr(n) {
+    return "₹" + (Math.round(n * 100) / 100).toLocaleString("en-IN");
+  }
+
   function timeAgo(ts) {
     if (!ts) return "";
     var s = Math.floor((Date.now() - ts) / 1000);
@@ -108,6 +141,7 @@
     renderContextPill();
     renderCheckContext();
     renderShelf();
+    renderCart();
     renderUsers();
     renderGroups();
   }
@@ -155,8 +189,59 @@
       return '<button type="button" class="shelf-item" data-product="' + p.id + '">' +
         '<span class="pe">' + p.emoji + '</span>' +
         '<span class="pn">' + esc(p.name) + '</span>' +
-        '<span class="pc">' + esc(p.category) + "</span></button>";
+        '<span class="pc">' + esc(p.category) + (p.price != null ? " · " + inr(p.price) : "") + "</span></button>";
     }).join("");
+  }
+
+  function renderCart() {
+    var cart = activeCart();
+    var badge = $("#cartBadge");
+    badge.hidden = !cart || !cart.length;
+    if (cart && cart.length) badge.textContent = cart.length;
+
+    var ctxBox = $("#cartContext");
+    var body = $("#cartBody");
+    var g = activeGroup();
+    ctxBox.className = "context-banner" + (g ? " is-group" : "");
+
+    if (!cart) {
+      ctxBox.innerHTML = "<strong>🧺 Cart</strong> Create a profile first.";
+      body.innerHTML = "";
+      return;
+    }
+    ctxBox.innerHTML = "<strong>🧺 Cart for " + esc(cartContextLabel()) + "</strong>" +
+      '<span class="spacer"></span>' +
+      (cart.length ? '<button class="btn btn-ghost btn-sm" data-action="cart-clear" type="button">Empty cart</button>' : "");
+
+    if (!cart.length) {
+      body.innerHTML = '<div class="empty"><span class="big">🧺</span>Nothing here yet.<br />Check a product, then tap "Add to cart" on the verdict.</div>';
+      return;
+    }
+
+    var total = 0, priced = 0, safeCount = 0;
+    var rows = cart.map(function (item, idx) {
+      if (item.status === "safe") safeCount++;
+      if (item.price != null) { total += item.price; priced++; }
+      var priceHtml = item.price != null
+        ? '<span class="price-amt">' + inr(item.price) + "</span>" +
+          (item.priceNote ? ' <span class="price-note">' + esc(item.priceNote) + "</span>" : "")
+        : '<button class="price-btn" data-action="cart-set-price" data-idx="' + idx + '" type="button">＋ set price</button>';
+      return '<div class="cart-row">' +
+        (item.image ? '<img src="' + esc(item.image) + '" alt="" loading="lazy" />'
+          : '<span class="cart-ph">' + (item.emoji || "📦") + "</span>") +
+        '<div class="cart-info"><div class="cart-name">' + esc(item.name) + "</div>" +
+        '<div class="cart-price">' + priceHtml + "</div></div>" +
+        '<div class="cart-side"><span class="verdict ' + (item.status || "caution") + '">' +
+          (item.status || "?").toUpperCase() + "</span>" +
+        '<button class="rm" data-action="cart-rm" data-idx="' + idx + '" type="button" aria-label="Remove">✕</button></div>' +
+      "</div>";
+    }).join("");
+
+    body.innerHTML = '<div class="card"><div class="stack">' + rows + "</div>" +
+      '<div class="cart-total"><span>' + safeCount + "/" + cart.length + " safe · " +
+        (priced < cart.length ? priced + "/" + cart.length + " priced" : "all priced") + "</span>" +
+      '<span class="amt">' + inr(total) + (priced < cart.length ? '<span class="price-note"> +' + (cart.length - priced) + " unpriced</span>" : "") + "</span></div></div>" +
+      '<p class="hint center">Prices: demo-shelf items use typical Indian MRPs; scanned items use crowd-reported prices from Open Prices when available. Tap "set price" to use what your store actually charges.</p>';
   }
 
   function renderUsers() {
@@ -467,6 +552,19 @@
     return status === "safe" ? "✅ Safe" : status === "caution" ? "⚠️ Check first" : "⛔ Not suitable";
   }
 
+  // market-price lookups, cached per barcode for the session
+  var priceCache = {};
+  function resolvePrice(product) {
+    if (product.price != null) return Promise.resolve({ amount: product.price, note: "est. MRP" });
+    var code = product.code;
+    if (!code) return Promise.resolve(null);
+    if (priceCache[code] !== undefined) return Promise.resolve(priceCache[code]);
+    return S.fetchPrice(code).then(function (res) {
+      priceCache[code] = res;
+      return res;
+    });
+  }
+
   function showResultModal() {
     var r = lastResult;
     var p = r.product;
@@ -497,20 +595,43 @@
       "</div>";
     }).join("");
 
-    var g = activeGroup();
+    var cart = activeCart();
+    var alreadyIn = cart ? findInCart(cart, p) !== -1 : false;
+    var cartBtn = !cart ? "" : alreadyIn
+      ? '<button class="btn btn-ghost" data-action="goto-cart" type="button">🧺 Already in cart — view</button>'
+      : '<button class="btn btn-primary" data-action="add-to-cart" type="button">＋ Add to ' + (activeGroup() ? "group " : "") + "cart</button>";
+
     openModal(
-      '<div class="result-head"><span class="result-emoji">' + p.emoji + "</span>" +
+      '<div class="result-head">' +
+        (p.image ? '<img class="result-img" src="' + esc(p.image) + '" alt="" />'
+          : '<span class="result-emoji">' + p.emoji + "</span>") +
         "<div><strong>" + esc(p.name) + "</strong><small>" + esc(p.category || "") +
         (p.source ? " · via " + esc(p.source) : "") + "</small></div></div>" +
       '<div class="verdict-banner ' + r.aggregate + '">' + verdictText(r.aggregate).split(" ")[0] + " " + bannerText + "</div>" +
+      '<p class="result-price" id="priceLine">' +
+        (p.price != null
+          ? '<span class="price-amt">' + inr(p.price) + '</span> <span class="price-note">est. MRP</span>'
+          : (p.code ? "Checking market price…" : '<span class="price-note">No price data — you can set one in the cart.</span>')) +
+      "</p>" +
+      (alreadyIn ? '<p class="in-cart-note">🧺 This is already in your cart.</p>' : "") +
       '<div class="nutri-strip">' + nutriBits + "</div>" +
       membersHtml +
       '<div class="modal-actions">' +
         '<button class="btn btn-ghost" data-action="close-modal" type="button">Done</button>' +
-        (g ? '<button class="btn btn-primary" data-action="add-to-cart" type="button">＋ Add to group cart</button>' : "") +
+        cartBtn +
       "</div>" +
       '<p class="disclaimer">Dietary goal alignment only — not medical advice. Always double-check the physical label for life-threatening allergies.</p>'
     );
+
+    if (p.price == null && p.code) {
+      resolvePrice(p).then(function (res) {
+        var el = $("#priceLine");
+        if (!el || !el.isConnected) return;
+        el.innerHTML = res
+          ? '<span class="price-amt">' + inr(res.amount) + '</span> <span class="price-note">' + esc(res.note) + "</span>"
+          : '<span class="price-note">No market price reported yet — you can set one in the cart.</span>';
+      });
+    }
   }
 
   /* =================== barcode lookup =================== */
@@ -524,7 +645,7 @@
     S.lookupBarcode(code).then(function (product) {
       btn.disabled = false;
       if (!product) {
-        status.textContent = "❌ Product not found. Try manual entry below (FR-1.12).";
+        status.textContent = "❌ " + code + " isn't in Open Food Facts yet (Indian product coverage is patchy). Try 🖼️ Photo identify or ✍️ manual entry below.";
         return;
       }
       status.textContent = "✅ Found: " + product.name;
@@ -1065,18 +1186,75 @@
       }
 
       case "add-to-cart": {
-        var ag = activeGroup();
-        if (!ag || !lastResult) break;
-        ag.cart = ag.cart || [];
-        ag.cart.push({
-          name: lastResult.product.name,
-          emoji: lastResult.product.emoji,
+        var cart0 = activeCart();
+        if (!cart0 || !lastResult) break;
+        var prod = lastResult.product;
+        if (findInCart(cart0, prod) !== -1) {
+          toast("🧺 Already in your cart — no duplicate added.", true);
+          break;
+        }
+        var item = {
+          key: cartKeyFor(prod),
+          code: prod.code || null,
+          name: prod.name,
+          emoji: prod.emoji,
+          image: prod.image || null,
           status: lastResult.aggregate,
+          price: prod.price != null ? prod.price : null,
+          priceNote: prod.price != null ? "est. MRP" : null,
           addedBy: state.currentUserId,
           at: Date.now()
-        });
-        persist(); closeModal(); renderGroups();
-        toast("Added to " + ag.name + "'s cart (" + verdictText(lastResult.aggregate) + ").");
+        };
+        cart0.push(item);
+        persist(); closeModal(); renderAll();
+        toast("Added to " + cartContextLabel() + " cart.");
+        // market price may still be loading — attach it when it lands
+        if (item.price == null && item.code) {
+          resolvePrice(prod).then(function (res) {
+            if (!res) return;
+            var liveCart = activeCart();
+            var idx = liveCart ? liveCart.findIndex(function (it) { return it.key === item.key; }) : -1;
+            if (idx === -1) return;
+            liveCart[idx].price = res.amount;
+            liveCart[idx].priceNote = res.note;
+            persist(); renderCart();
+          });
+        }
+        break;
+      }
+
+      case "goto-cart":
+        closeModal();
+        showTab("cart");
+        break;
+
+      case "cart-rm": {
+        var cartA = activeCart();
+        if (cartA) { cartA.splice(parseInt(btn.dataset.idx, 10), 1); persist(); renderAll(); }
+        break;
+      }
+
+      case "cart-set-price": {
+        var cartB = activeCart();
+        var it = cartB && cartB[parseInt(btn.dataset.idx, 10)];
+        if (!it) break;
+        var entered = prompt("Price for " + it.name + " (₹):", "");
+        if (entered === null) break;
+        var val = parseFloat(entered);
+        if (isNaN(val) || val < 0) { toast("That's not a valid price.", true); break; }
+        it.price = val;
+        it.priceNote = "set by you";
+        persist(); renderCart();
+        break;
+      }
+
+      case "cart-clear": {
+        var cartC = activeCart();
+        if (!cartC || !cartC.length) break;
+        if (!confirm("Empty this cart (" + cartC.length + " items)?")) break;
+        cartC.length = 0;
+        persist(); renderAll();
+        toast("Cart emptied.");
         break;
       }
     }
