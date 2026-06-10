@@ -422,8 +422,11 @@
       '<div class="field"><label>Illnesses / medical conditions</label><div class="chip-select" id="fConditions">' +
         chipGroup(S.CONDITIONS, u.conditions || [], "cond") + "</div>" +
         '<div class="custom-add-stack">' +
-        '<input type="text" id="fCustomCondName" maxlength="40" placeholder="Other illness, e.g. gout" />' +
-        '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="120" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
+        '<div class="custom-add"><input type="text" id="fCustomCondName" maxlength="60" placeholder="Other illness, e.g. gout" />' +
+        '<button type="button" class="btn btn-ghost" data-action="find-cond">🔍 Find</button></div>' +
+        '<div class="cand-list" id="fCondResults"></div>' +
+        '<p class="hint" id="fCondNote">Tap Find — I\'ll recognise the illness via the NIH ICD-10 catalogue and import a suggested avoid-list where trusted guidance exists.</p>' +
+        '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="200" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
         '<button type="button" class="btn btn-ghost" data-action="add-custom-cond">＋ Add</button></div></div>' +
         '<p class="hint">⚠️ The avoid-list is what gets checked — without it, products can\'t be auto-screened for this illness and will show "needs a closer look".</p>' +
         '<div class="chip-select" id="fCustomCondList">' + customCondChips() + "</div></div>" +
@@ -1019,6 +1022,21 @@
     });
   }
 
+  // Fill the avoid-list input from curated guidance for a recognised illness;
+  // falls back to the supplied message when we have nothing curated.
+  function applyCondGuidance(name, noteEl, noGuidanceMsg) {
+    var g = S.suggestAvoidFor(name);
+    if (g && g.avoid.length) {
+      $("#fCustomCondAvoid").value = g.avoid.join(", ");
+      if (noteEl) noteEl.textContent = "💡 Imported suggested avoid-list (" + g.source +
+        "). Edit it, then tap ＋ Add. Confirm with your doctor.";
+    } else if (g) {
+      if (noteEl) noteEl.textContent = "💡 " + g.source;
+    } else if (noteEl) {
+      noteEl.textContent = noGuidanceMsg;
+    }
+  }
+
   /* =================== actions (event delegation) =================== */
 
   document.addEventListener("click", function (e) {
@@ -1068,6 +1086,44 @@
         formCustom.allergens.splice(parseInt(btn.dataset.idx, 10), 1);
         refreshCustomLists();
         break;
+
+      case "find-cond": {
+        var term = $("#fCustomCondName").value.trim();
+        var resBox = $("#fCondResults");
+        var noteEl = $("#fCondNote");
+        if (!term) { toast("Type an illness name first.", true); break; }
+        resBox.innerHTML = '<span class="hint">Searching the NIH ICD-10 catalogue…</span>';
+        S.searchConditions(term).then(function (matches) {
+          if (!resBox.isConnected) return;
+          if (!matches.length) {
+            resBox.innerHTML = "";
+            applyCondGuidance(term, noteEl,
+              "Not found in the ICD-10 catalogue — check the spelling, or add it manually.");
+            return;
+          }
+          resBox.innerHTML = matches.map(function (m) {
+            return '<button type="button" class="cand" data-action="pick-cond" data-name="' + esc(m.name) + '">' +
+              '<span class="cand-ph">🩺</span><span><strong>' + esc(m.name) + "</strong>" +
+              "<small>ICD-10-CM " + esc(m.code) + " · NIH/NLM</small></span></button>";
+          }).join("");
+          noteEl.textContent = "Tap the matching condition:";
+        }).catch(function () {
+          if (!resBox.isConnected) return;
+          resBox.innerHTML = "";
+          applyCondGuidance(term, noteEl,
+            "📡 Couldn't reach the NIH catalogue — used built-in guidance instead.");
+        });
+        break;
+      }
+
+      case "pick-cond": {
+        var picked = btn.dataset.name;
+        $("#fCustomCondName").value = picked;
+        $("#fCondResults").innerHTML = "";
+        applyCondGuidance(picked, $("#fCondNote"),
+          "✅ Recognised via NIH ICD-10 — no curated avoid-list for this one; add your own terms.");
+        break;
+      }
 
       case "add-custom-cond": {
         var nameInput = $("#fCustomCondName");
@@ -1265,7 +1321,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
     var id = e.target && e.target.id;
-    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "add-custom-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search" }[id];
+    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "find-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search" }[id];
     if (proxy) {
       e.preventDefault();
       var b = document.querySelector('[data-action="' + proxy + '"]');

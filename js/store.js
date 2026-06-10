@@ -399,6 +399,82 @@
     });
   }
 
+  /* =================== Illness recognition & avoid-list guidance =================== */
+
+  // NIH/NLM Clinical Tables — public ICD-10-CM autocomplete API (no key, CORS-enabled)
+  function searchConditions(term) {
+    var url = "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&maxList=7&terms=" +
+      encodeURIComponent(term);
+    return fetchJsonWithTimeout(url, 10000).then(function (d) {
+      // response shape: [total, [codes], null, [[code, name], ...]]
+      var rows = (d && d[3]) || [];
+      var seen = {};
+      return rows.map(function (r) { return { code: r[0], name: r[1] }; })
+        .filter(function (c) {
+          var k = c.name.toLowerCase();
+          if (seen[k]) return false;
+          seen[k] = 1;
+          return true;
+        });
+    });
+  }
+
+  // Curated avoid-food guidance per condition, distilled from clinical sources
+  // (same "static reference" approach the SRS uses for ADA/AHA/NKF rules).
+  // Suggestions only — users edit before adding, and confirm with their doctor.
+  var CONDITION_GUIDANCE = [
+    { match: ["gout", "hyperuricemia", "hyperuricaemia"],
+      avoid: ["anchovy", "sardine", "mackerel", "herring", "liver", "kidney", "organ meat", "shrimp", "mussel", "yeast extract", "beer"],
+      source: "high-purine foods · ACR/NIH gout guidance" },
+    { match: ["polycythemia", "polycythaemia"],
+      avoid: ["liver", "organ meat", "beef", "mutton", "pork", "iron-fortified"],
+      source: "iron-rich foods often limited in PV · confirm with your haematologist" },
+    { match: ["hemochromatosis", "haemochromatosis", "iron overload"],
+      avoid: ["liver", "organ meat", "beef", "iron-fortified", "raw oyster", "raw clam"],
+      source: "iron-loading foods · NIDDK guidance" },
+    { match: ["gerd", "reflux", "esophagitis", "oesophagitis", "heartburn"],
+      avoid: ["chilli", "black pepper", "citrus", "orange", "lemon", "tomato", "onion", "garlic", "chocolate", "coffee", "peppermint", "fried"],
+      source: "common reflux triggers · NIDDK/ACG guidance" },
+    { match: ["irritable bowel", "ibs"],
+      avoid: ["onion", "garlic", "wheat", "rye", "beans", "lentil", "chickpea", "cauliflower", "mushroom", "milk", "sorbitol", "mannitol", "high fructose"],
+      source: "high-FODMAP foods · Monash/ACG guidance" },
+    { match: ["phenylketonuria", "pku"],
+      avoid: ["aspartame", "phenylalanine", "meat", "fish", "egg", "milk", "cheese", "soy", "nuts"],
+      source: "phenylalanine sources · NIH PKU guidance" },
+    { match: ["migraine"],
+      avoid: ["aged cheese", "monosodium glutamate", "msg", "aspartame", "nitrate", "nitrite", "red wine", "dark chocolate", "caffeine"],
+      source: "common dietary triggers · NIH/AMF guidance" },
+    { match: ["histamine"],
+      avoid: ["aged cheese", "fermented", "sauerkraut", "salami", "cured meat", "red wine", "beer", "vinegar", "tuna", "mackerel"],
+      source: "high-histamine foods · allergy society guidance" },
+    { match: ["g6pd", "glucose-6-phosphate", "favism"],
+      avoid: ["fava bean", "broad bean", "menthol"],
+      source: "G6PD triggers · NIH guidance" },
+    { match: ["celiac", "coeliac"],
+      avoid: ["wheat", "barley", "rye", "malt", "semolina", "spelt"],
+      source: "gluten sources · also available as a built-in condition toggle" },
+    { match: ["lactose"],
+      avoid: ["milk", "cream", "whey", "butter", "cheese", "milk solids"],
+      source: "lactose sources · also available as a built-in condition toggle" },
+    { match: ["hypertension", "high blood pressure"],
+      avoid: [], source: "use the built-in Hypertension toggle — it applies AHA sodium thresholds automatically" },
+    { match: ["diabetes"],
+      avoid: [], source: "use the built-in Diabetes toggle — it applies ADA sugar thresholds automatically" },
+    { match: ["kidney", "renal", "ckd"],
+      avoid: [], source: "use the built-in Chronic kidney disease toggle — it applies NKF thresholds automatically" }
+  ];
+
+  function suggestAvoidFor(name) {
+    var n = String(name || "").toLowerCase();
+    for (var i = 0; i < CONDITION_GUIDANCE.length; i++) {
+      var g = CONDITION_GUIDANCE[i];
+      for (var j = 0; j < g.match.length; j++) {
+        if (n.indexOf(g.match[j]) !== -1) return g;
+      }
+    }
+    return null;
+  }
+
   /* =================== Persistence (on-device, NFR-2.1) =================== */
 
   var KEY = "safeshelf_v1";
@@ -432,6 +508,8 @@
     evaluateGroup: evaluateGroup,
     lookupBarcode: lookupBarcode,
     fetchPrice: fetchPrice,
+    searchConditions: searchConditions,
+    suggestAvoidFor: suggestAvoidFor,
     searchProducts: searchProducts,
     load: load,
     save: save,
