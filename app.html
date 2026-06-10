@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#07120d" />
+  <meta name="description" content="Safe Shelf app — check products against every profile's allergens and illnesses, solo or in a group buy." />
+  <title>Safe Shelf — App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body class="app">
+
+  <!-- ===== Top bar ===== -->
+  <header class="topbar">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">🛡️</span>
+      <span class="brand-name">Safe<em>Shelf</em></span>
+    </a>
+    <button class="context-pill" id="contextPill" type="button" title="Shopping context">
+      <span id="contextPillText">No profile</span>
+    </button>
+  </header>
+
+  <main class="app-main">
+
+    <!-- ===== Check tab ===== -->
+    <section class="tab-panel" id="panel-check" data-panel>
+      <div class="context-banner" id="checkContext"></div>
+
+      <div class="card">
+        <h2 class="card-title">🔎 Barcode lookup</h2>
+        <p class="card-sub">Live product data from Open Food Facts (try <button type="button" class="link-btn" data-barcode="3017624010701">3017624010701</button> or <button type="button" class="link-btn" data-barcode="5000159484695">5000159484695</button>).</p>
+        <form class="barcode-row" id="barcodeForm">
+          <input type="text" id="barcodeInput" inputmode="numeric" placeholder="Enter barcode…" autocomplete="off" />
+          <button class="btn btn-primary btn-sm" type="submit" id="barcodeBtn">Look up</button>
+        </form>
+        <p class="hint" id="barcodeStatus"></p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🛍️ Demo shelf</h2>
+        <p class="card-sub">Tap any product to check it for the active profile or group.</p>
+        <div class="shelf-grid" id="shelfGrid"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">✍️ Manual entry</h2>
+        <p class="card-sub">Product not found? Enter what's on the label (per 100g).</p>
+        <form id="manualForm" class="manual-form">
+          <input type="text" id="mName" placeholder="Product name" required autocomplete="off" />
+          <div class="chip-select" id="mAllergens"></div>
+          <div class="nutrient-row">
+            <label>Sugar (g)<input type="number" step="0.1" min="0" id="mSugar" placeholder="—" /></label>
+            <label>Sodium (mg)<input type="number" step="1" min="0" id="mSodium" placeholder="—" /></label>
+            <label>Sat. fat (g)<input type="number" step="0.1" min="0" id="mSatFat" placeholder="—" /></label>
+            <label>Protein (g)<input type="number" step="0.1" min="0" id="mProtein" placeholder="—" /></label>
+          </div>
+          <button class="btn btn-primary" type="submit">Check product</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== Profiles tab ===== -->
+    <section class="tab-panel" id="panel-profiles" data-panel hidden>
+      <div class="context-banner" id="profilesContext"></div>
+      <div id="usersList" class="stack"></div>
+      <button class="btn btn-primary btn-block" id="addUserBtn" type="button">＋ Add a profile</button>
+      <p class="hint center">Profiles are stored on this device only. Each person can edit
+        <strong>only their own</strong> allergens &amp; illnesses.</p>
+    </section>
+
+    <!-- ===== Groups tab ===== -->
+    <section class="tab-panel" id="panel-groups" data-panel hidden>
+      <div class="context-banner" id="groupsContext"></div>
+      <div id="groupsList" class="stack"></div>
+      <button class="btn btn-primary btn-block" id="addGroupBtn" type="button">＋ New group buy</button>
+      <p class="hint center">🔒 Inside a group, member allergens &amp; illnesses are read-only.
+        Only the member themselves can change them — the group updates instantly.</p>
+    </section>
+  </main>
+
+  <!-- ===== Bottom nav ===== -->
+  <nav class="bottom-nav" aria-label="Main">
+    <button type="button" class="nav-item active" data-tab="check"><span>🔍</span>Check</button>
+    <button type="button" class="nav-item" data-tab="profiles"><span>👥</span>Profiles</button>
+    <button type="button" class="nav-item" data-tab="groups"><span>🛒</span>Group&nbsp;Buy</button>
+  </nav>
+
+  <!-- ===== Modal shell ===== -->
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" id="modalBox"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
