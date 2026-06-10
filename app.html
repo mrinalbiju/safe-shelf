@@ -33,13 +33,22 @@
       <div class="context-banner" id="checkContext"></div>
 
       <div class="card">
-        <h2 class="card-title">🔎 Barcode lookup</h2>
-        <p class="card-sub">Live product data from Open Food Facts (try <button type="button" class="link-btn" data-barcode="3017624010701">3017624010701</button> or <button type="button" class="link-btn" data-barcode="5000159484695">5000159484695</button>).</p>
+        <h2 class="card-title">🔎 Barcode / QR scanner</h2>
+        <p class="card-sub">Scan the code with your camera, or type it. Live data from Open Food Facts (try <button type="button" class="link-btn" data-barcode="3017624010701">3017624010701</button> or <button type="button" class="link-btn" data-barcode="5000159484695">5000159484695</button>).</p>
+        <button class="btn btn-primary btn-block" id="scanBtn" type="button">📷 Scan barcode / QR with camera</button>
         <form class="barcode-row" id="barcodeForm">
-          <input type="text" id="barcodeInput" inputmode="numeric" placeholder="Enter barcode…" autocomplete="off" />
-          <button class="btn btn-primary btn-sm" type="submit" id="barcodeBtn">Look up</button>
+          <input type="text" id="barcodeInput" inputmode="numeric" placeholder="…or enter barcode manually" autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" type="submit" id="barcodeBtn">Look up</button>
         </form>
         <p class="hint" id="barcodeStatus"></p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🖼️ Photo identify <span class="beta-tag">beta</span></h2>
+        <p class="card-sub">Like Google Lens — snap the front of the pack. I'll read the label text and find matching products.</p>
+        <input type="file" id="photoInput" accept="image/*" capture="environment" hidden />
+        <button class="btn btn-primary btn-block" id="photoBtn" type="button">📸 Take / choose a photo</button>
+        <p class="hint" id="photoStatus"></p>
       </div>
 
       <div class="card">

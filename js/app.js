@@ -47,13 +47,17 @@
   }
 
   /* ---- modal ---- */
+  var modalCleanup = null; // teardown hook (stops camera, frees blobs) run on every close/replace
+
   function openModal(html) {
+    if (modalCleanup) { modalCleanup(); modalCleanup = null; }
     var backdrop = $("#modalBackdrop");
     $("#modalBox").innerHTML = html;
     backdrop.hidden = false;
     document.body.style.overflow = "hidden";
   }
   function closeModal() {
+    if (modalCleanup) { modalCleanup(); modalCleanup = null; }
     $("#modalBackdrop").hidden = true;
     document.body.style.overflow = "";
   }
@@ -79,6 +83,12 @@
     var html = "";
     (user.allergens || []).forEach(function (a) {
       html += '<span class="mini-chip allergen">' + S.allergenLabel(a) + "</span>";
+    });
+    (user.customAllergens || []).forEach(function (t) {
+      html += '<span class="mini-chip allergen">✳️ ' + esc(t) + "</span>";
+    });
+    (user.customConditions || []).forEach(function (cc) {
+      html += '<span class="mini-chip condition">🩺 ' + esc(cc.name) + "</span>";
     });
     (user.conditions || []).forEach(function (c) {
       var cond = S.CONDITIONS.find(function (x) { return x.id === c; });
@@ -280,9 +290,35 @@
 
   /* =================== user form =================== */
 
+  // staging for free-text entries while the profile modal is open
+  var formCustom = { allergens: [], conditions: [] };
+
+  function customAllergenChips() {
+    return formCustom.allergens.map(function (t, i) {
+      return '<button type="button" class="chip on" data-action="rm-custom-al" data-idx="' + i + '">✳️ ' +
+        esc(t) + '<span class="x">✕</span></button>';
+    }).join("") || '<span class="hint">Nothing custom yet.</span>';
+  }
+  function customCondChips() {
+    return formCustom.conditions.map(function (cc, i) {
+      var avoids = (cc.avoid || []).length ? " · avoids: " + esc(cc.avoid.join(", ")) : "";
+      return '<button type="button" class="chip on" data-action="rm-custom-cond" data-idx="' + i + '">🩺 ' +
+        esc(cc.name) + avoids + '<span class="x">✕</span></button>';
+    }).join("") || '<span class="hint">Nothing custom yet.</span>';
+  }
+  function refreshCustomLists() {
+    var a = $("#fCustomAlList"), c = $("#fCustomCondList");
+    if (a) a.innerHTML = customAllergenChips();
+    if (c) c.innerHTML = customCondChips();
+  }
+
   function openUserForm(user) {
     var isNew = !user;
     var u = user || { name: "", emoji: S.EMOJIS[state.users.length % S.EMOJIS.length], allergens: [], conditions: [], lifestyle: [], budget: "" };
+    formCustom.allergens = (u.customAllergens || []).slice();
+    formCustom.conditions = (u.customConditions || []).map(function (cc) {
+      return { name: cc.name, avoid: (cc.avoid || []).slice() };
+    });
     openModal(
       "<h3>" + (isNew ? "New profile" : "Edit " + esc(u.name)) + "</h3>" +
       '<p class="sub">' + (isNew
@@ -294,9 +330,17 @@
           return '<button type="button" class="emoji-pick' + (e === u.emoji ? " on" : "") + '" data-emoji="' + e + '">' + e + "</button>";
         }).join("") + "</div></div>" +
       '<div class="field"><label>Allergens (Priority 0 — always blocking)</label><div class="chip-select" id="fAllergens">' +
-        chipGroup(S.ALLERGENS, u.allergens || [], "al") + "</div></div>" +
+        chipGroup(S.ALLERGENS, u.allergens || [], "al") + "</div>" +
+        '<div class="custom-add"><input type="text" id="fCustomAl" maxlength="40" placeholder="Other allergen, e.g. kiwi, msg…" />' +
+        '<button type="button" class="btn btn-ghost" data-action="add-custom-al">＋ Add</button></div>' +
+        '<div class="chip-select" id="fCustomAlList">' + customAllergenChips() + "</div></div>" +
       '<div class="field"><label>Illnesses / medical conditions</label><div class="chip-select" id="fConditions">' +
-        chipGroup(S.CONDITIONS, u.conditions || [], "cond") + "</div></div>" +
+        chipGroup(S.CONDITIONS, u.conditions || [], "cond") + "</div>" +
+        '<div class="custom-add-stack">' +
+        '<input type="text" id="fCustomCondName" maxlength="40" placeholder="Other illness, e.g. gout" />' +
+        '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="120" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
+        '<button type="button" class="btn btn-ghost" data-action="add-custom-cond">＋ Add</button></div></div>' +
+        '<div class="chip-select" id="fCustomCondList">' + customCondChips() + "</div></div>" +
       '<div class="field"><label>Lifestyle preferences</label><div class="chip-select" id="fLifestyle">' +
         chipGroup(S.LIFESTYLES, u.lifestyle || [], "ls") + "</div></div>" +
       '<div class="field"><label>Monthly grocery budget (optional, ₹)</label>' +
@@ -317,7 +361,11 @@
       name: name,
       emoji: emojiBtn ? emojiBtn.dataset.emoji : "😀",
       allergens: readChips($("#fAllergens"), "al"),
+      customAllergens: formCustom.allergens.slice(),
       conditions: readChips($("#fConditions"), "cond"),
+      customConditions: formCustom.conditions.map(function (cc) {
+        return { name: cc.name, avoid: cc.avoid.slice() };
+      }),
       lifestyle: readChips($("#fLifestyle"), "ls"),
       budget: $("#fBudget").value || "",
       updatedAt: Date.now()
@@ -513,6 +561,191 @@
     checkProduct(product);
   }
 
+  /* =================== camera barcode / QR scanner =================== */
+
+  function loadScript(src, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      var to = setTimeout(function () { s.remove(); reject(new Error("timeout")); }, timeoutMs || 20000);
+      s.src = src;
+      s.onload = function () { clearTimeout(to); resolve(); };
+      s.onerror = function () { clearTimeout(to); s.remove(); reject(new Error("load failed")); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function openScanner() {
+    openModal(
+      "<h3>📷 Scan a code</h3>" +
+      '<p class="sub">Point your camera at the product barcode or QR code.</p>' +
+      '<div class="scan-stage"><video class="scan-video" id="scanVideo" autoplay playsinline muted></video>' +
+      '<div class="scan-reticle"></div></div>' +
+      '<p class="scan-status" id="scanStatus">Starting camera…</p>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button></div>'
+    );
+    var video = $("#scanVideo");
+    var statusEl = $("#scanStatus");
+    var stream = null, stopped = false, zxingReader = null;
+
+    modalCleanup = function () {
+      stopped = true;
+      if (zxingReader) { try { zxingReader.reset(); } catch (e) { /* already stopped */ } }
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    };
+
+    function finish(raw) {
+      if (stopped) return;
+      raw = String(raw || "").trim();
+      // QR codes often wrap the GTIN in a URL (GS1 digital link) — pull out the digits
+      var digits = (raw.match(/\d{8,14}/) || [])[0] || "";
+      if (digits.length === 14 && digits.charAt(0) === "0") digits = digits.slice(1); // GTIN-14 → EAN-13
+      closeModal();
+      if (digits) {
+        $("#barcodeInput").value = digits;
+        toast("📷 Scanned " + digits);
+        doBarcodeLookup(digits);
+      } else if (raw) {
+        toast("Scanned: \"" + raw.slice(0, 60) + "\" — no product barcode found in it.", true);
+      }
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = "📵 This browser can't access the camera. Type the barcode manually instead.";
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      .then(function (s) {
+        if (stopped) { s.getTracks().forEach(function (t) { t.stop(); }); return null; }
+        stream = s;
+        video.srcObject = s;
+        return video.play().catch(function () { /* autoplay quirks; video still renders */ });
+      })
+      .then(function () {
+        if (stopped || !stream) return;
+        if ("BarcodeDetector" in window) {
+          statusEl.textContent = "Scanning…";
+          var detector = new window.BarcodeDetector({
+            formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"]
+          });
+          (function loop() {
+            if (stopped) return;
+            detector.detect(video).then(function (codes) {
+              if (stopped) return;
+              if (codes && codes.length) finish(codes[0].rawValue);
+              else setTimeout(loop, 160);
+            }).catch(function () { if (!stopped) setTimeout(loop, 400); });
+          })();
+        } else {
+          // older browsers: fall back to the ZXing decoder
+          statusEl.textContent = "Loading scanner engine…";
+          loadScript("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js").then(function () {
+            if (stopped) return;
+            statusEl.textContent = "Scanning…";
+            zxingReader = new window.ZXing.BrowserMultiFormatReader();
+            zxingReader.decodeFromStream(stream, video, function (result) {
+              if (result) finish(result.getText());
+            });
+          }).catch(function () {
+            if (!stopped) statusEl.textContent = "Scanner engine failed to load — check your connection or type the barcode manually.";
+          });
+        }
+      })
+      .catch(function () {
+        if (!stopped) statusEl.textContent = "📵 Camera unavailable or permission denied — type the barcode manually instead.";
+      });
+  }
+
+  /* =================== photo identify (OCR → product search) =================== */
+
+  function ensureTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    return loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js", 30000);
+  }
+
+  // Distil OCR text into a short search query: prominent-ish words, no noise
+  function buildQuery(text) {
+    var words = String(text || "").split(/[^A-Za-z]+/).filter(function (w) { return w.length >= 4; });
+    var seen = {}, picked = [];
+    var stop = { with: 1, from: 1, this: 1, that: 1, contains: 1, ingredients: 1, nutrition: 1,
+      best: 1, before: 1, net: 1, weight: 1, made: 1, pack: 1, free: 1, energy: 1, serving: 1 };
+    for (var i = 0; i < words.length && picked.length < 5; i++) {
+      var w = words[i].toLowerCase();
+      if (stop[w] || seen[w]) continue;
+      seen[w] = 1;
+      picked.push(w);
+    }
+    return picked.join(" ");
+  }
+
+  function handlePhoto(file) {
+    if (!file) return;
+    var blobUrl = URL.createObjectURL(file);
+    openModal(
+      '<h3>🖼️ Photo identify</h3>' +
+      '<p class="sub">I\'ll read the label text and search for matching products.</p>' +
+      '<img class="photo-preview" alt="Your product photo" src="' + blobUrl + '" />' +
+      '<p class="scan-status" id="idStatus">Loading text-recognition engine…</p>' +
+      '<div id="idResults"></div>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal" type="button">Close</button></div>'
+    );
+    modalCleanup = function () { URL.revokeObjectURL(blobUrl); };
+
+    function setStatus(msg) { var el = $("#idStatus"); if (el) el.textContent = msg; }
+
+    function showQueryUI(query) {
+      var box = $("#idResults");
+      if (!box) return;
+      box.innerHTML =
+        '<div class="query-row"><input type="text" id="idQuery" placeholder="Product name…" value="' + esc(query) + '" />' +
+        '<button class="btn btn-primary btn-sm" data-action="photo-search" type="button">Search</button></div>' +
+        '<div class="cand-list" id="candList"></div>';
+    }
+
+    ensureTesseract().then(function () {
+      setStatus("Reading the label… this takes a few seconds.");
+      return window.Tesseract.recognize(file, "eng");
+    }).then(function (res) {
+      var query = buildQuery(res && res.data && res.data.text);
+      if (!query) {
+        setStatus("Couldn't read any text — try a sharper, closer photo, or type the product name:");
+        showQueryUI("");
+        return;
+      }
+      setStatus('I read: "' + query + '" — searching… (edit it if I misread)');
+      showQueryUI(query);
+      runPhotoSearch(query);
+    }).catch(function () {
+      setStatus(navigator.onLine
+        ? "Text recognition couldn't load. Type the product name instead:"
+        : "📡 You're offline — photo identify needs a connection. Type the product name instead:");
+      showQueryUI("");
+    });
+  }
+
+  function runPhotoSearch(query) {
+    var list = $("#candList");
+    var statusEl = $("#idStatus");
+    if (!list) return;
+    list.innerHTML = '<span class="hint">Searching Open Food Facts…</span>';
+    S.searchProducts(query).then(function (products) {
+      if (!list.isConnected) return;
+      if (!products.length) {
+        list.innerHTML = '<span class="hint">No matches for "' + esc(query) + '". Try fewer or different words.</span>';
+        return;
+      }
+      if (statusEl) statusEl.textContent = "Tap the product that matches your photo:";
+      list.innerHTML = products.map(function (p) {
+        return '<button type="button" class="cand" data-action="pick-candidate" data-code="' + esc(p.code) + '">' +
+          (p.image ? '<img src="' + esc(p.image) + '" alt="" loading="lazy" />' : '<span class="cand-ph">📦</span>') +
+          "<span><strong>" + esc(p.name) + "</strong>" +
+          (p.brands ? "<small>" + esc(p.brands) + "</small>" : "") + "</span></button>";
+      }).join("");
+    }).catch(function () {
+      if (list.isConnected) list.innerHTML = '<span class="hint">📡 Search failed — check your connection and try again.</span>';
+    });
+  }
+
   /* =================== actions (event delegation) =================== */
 
   document.addEventListener("click", function (e) {
@@ -544,6 +777,60 @@
     switch (btn.dataset.action) {
       case "close-modal": closeModal(); break;
       case "new-user": openUserForm(null); break;
+
+      case "add-custom-al": {
+        var alInput = $("#fCustomAl");
+        var term = alInput.value.trim();
+        if (!term) break;
+        if (formCustom.allergens.some(function (t) { return t.toLowerCase() === term.toLowerCase(); })) {
+          toast("Already added.", true); break;
+        }
+        formCustom.allergens.push(term);
+        alInput.value = "";
+        refreshCustomLists();
+        break;
+      }
+
+      case "rm-custom-al":
+        formCustom.allergens.splice(parseInt(btn.dataset.idx, 10), 1);
+        refreshCustomLists();
+        break;
+
+      case "add-custom-cond": {
+        var nameInput = $("#fCustomCondName");
+        var avoidInput = $("#fCustomCondAvoid");
+        var cname = nameInput.value.trim();
+        if (!cname) { toast("Give the illness a name first.", true); break; }
+        var avoid = avoidInput.value.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+        formCustom.conditions.push({ name: cname, avoid: avoid });
+        nameInput.value = ""; avoidInput.value = "";
+        refreshCustomLists();
+        if (!avoid.length) toast("Added. Tip: list ingredients to avoid so I can auto-check products for it.", true);
+        break;
+      }
+
+      case "rm-custom-cond":
+        formCustom.conditions.splice(parseInt(btn.dataset.idx, 10), 1);
+        refreshCustomLists();
+        break;
+
+      case "photo-search": {
+        var q = $("#idQuery").value.trim();
+        if (q) runPhotoSearch(q);
+        break;
+      }
+
+      case "pick-candidate": {
+        var stEl = $("#idStatus");
+        if (stEl) stEl.textContent = "Loading product details…";
+        S.lookupBarcode(btn.dataset.code).then(function (product) {
+          if (product) checkProduct(product);
+          else toast("Couldn't load that product's details.", true);
+        }).catch(function () {
+          toast("📡 Network error loading the product.", true);
+        });
+        break;
+      }
 
       case "save-user": saveUserForm(btn.dataset.id || null); break;
 
@@ -644,9 +931,27 @@
     }
   });
 
+  // Enter inside the custom-entry boxes acts as "Add" instead of doing nothing
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var id = e.target && e.target.id;
+    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "add-custom-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search" }[id];
+    if (proxy) {
+      e.preventDefault();
+      var b = document.querySelector('[data-action="' + proxy + '"]');
+      if (b) b.click();
+    }
+  });
+
   $("#addUserBtn").addEventListener("click", function () { openUserForm(null); });
   $("#addGroupBtn").addEventListener("click", openGroupForm);
   $("#contextPill").addEventListener("click", openSwitcher);
+  $("#scanBtn").addEventListener("click", openScanner);
+  $("#photoBtn").addEventListener("click", function () { $("#photoInput").click(); });
+  $("#photoInput").addEventListener("change", function () {
+    handlePhoto(this.files && this.files[0]);
+    this.value = ""; // allow re-selecting the same photo
+  });
   $("#barcodeForm").addEventListener("submit", function (e) {
     e.preventDefault();
     doBarcodeLookup($("#barcodeInput").value.trim());

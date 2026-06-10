@@ -153,12 +153,22 @@
     var reasons = [];
     var triggers = detectTriggers(product);
     var n = product.nutrition || {};
+    var haystack = ((product.ingredients || "") + " " + (product.name || "")).toLowerCase();
 
     // 1. Presence-based: the user's own allergen list (Priority 0)
     (user.allergens || []).forEach(function (al) {
       if (triggers[al]) {
         reasons.push({ kind: "allergen", severity: "unsafe",
           text: allergenLabel(al) + " — " + triggers[al] });
+      }
+    });
+
+    // 1b. Custom free-text allergens: substring match on ingredients + name
+    (user.customAllergens || []).forEach(function (term) {
+      var t = String(term).toLowerCase().trim();
+      if (t && haystack.indexOf(t) !== -1) {
+        reasons.push({ kind: "allergen", severity: "unsafe",
+          text: "✳️ " + term + " (custom allergen) — found in this product" });
       }
     });
 
@@ -175,6 +185,17 @@
       });
       (cond.rules || []).forEach(function (r) {
         numericRules.push({ rule: r, source: cond.label });
+      });
+    });
+
+    // 2b. Custom illnesses: presence-based against their own avoid-list
+    (user.customConditions || []).forEach(function (cc) {
+      (cc.avoid || []).forEach(function (term) {
+        var t = String(term).toLowerCase().trim();
+        if (t && haystack.indexOf(t) !== -1) {
+          reasons.push({ kind: "condition", severity: "unsafe",
+            text: "🩺 " + cc.name + " (custom) — contains " + term });
+        }
       });
     });
 
@@ -274,6 +295,26 @@
     });
   }
 
+  // Free-text product search (used by photo identify) — Open Food Facts search API
+  function searchProducts(query) {
+    var url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=8" +
+      "&search_terms=" + encodeURIComponent(query) +
+      "&fields=code,product_name,brands,image_small_url";
+    return fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("network");
+      return res.json();
+    }).then(function (data) {
+      return (data.products || []).filter(function (p) { return p.code; }).map(function (p) {
+        return {
+          code: p.code,
+          name: p.product_name || "Unknown product",
+          brands: p.brands || "",
+          image: p.image_small_url || null
+        };
+      });
+    });
+  }
+
   /* =================== Persistence (on-device, NFR-2.1) =================== */
 
   var KEY = "safeshelf_v1";
@@ -306,6 +347,7 @@
     evaluate: evaluate,
     evaluateGroup: evaluateGroup,
     lookupBarcode: lookupBarcode,
+    searchProducts: searchProducts,
     load: load,
     save: save,
     uid: uid

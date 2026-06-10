@@ -147,8 +147,98 @@ input[type="text"], input[type="number"], select {
 }
 input:focus, select:focus { outline: 2px solid rgba(52, 211, 153, 0.5); border-color: var(--green); }
 
-.barcode-row { display: flex; gap: 0.5rem; }
+.barcode-row { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
 .barcode-row input { flex: 1; }
+
+.beta-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: #1d1503;
+  background: linear-gradient(135deg, var(--amber), #fde68a);
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+  margin-left: 0.3rem;
+}
+
+/* ---------- camera scanner ---------- */
+.scan-stage {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  margin-bottom: 0.8rem;
+}
+.scan-video { display: block; width: 100%; max-height: 58svh; object-fit: cover; }
+.scan-reticle {
+  position: absolute;
+  inset: 18% 12%;
+  border: 2px solid rgba(52, 211, 153, 0.85);
+  border-radius: 14px;
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.scan-reticle::after {
+  content: "";
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 0;
+  height: 2px;
+  background: var(--lime);
+  animation: scanline 2.2s ease-in-out infinite;
+  box-shadow: 0 0 12px var(--lime);
+}
+@keyframes scanline { 0%, 100% { top: 4%; } 50% { top: 94%; } }
+.scan-status { text-align: center; font-size: 0.84rem; color: var(--muted); min-height: 1.4em; }
+
+/* ---------- photo identify ---------- */
+.photo-preview {
+  display: block;
+  width: 100%;
+  max-height: 38svh;
+  object-fit: contain;
+  border-radius: 14px;
+  background: #000;
+  margin-bottom: 0.8rem;
+}
+.query-row { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; }
+.query-row input { flex: 1; }
+.cand-list { display: grid; gap: 0.5rem; }
+.cand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.6rem 0.7rem;
+  color: var(--text);
+}
+.cand:hover { border-color: rgba(52, 211, 153, 0.5); }
+.cand img, .cand .cand-ph {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.cand small { display: block; color: var(--muted); font-size: 0.74rem; }
+
+/* ---------- custom allergen / illness entry ---------- */
+.custom-add { display: flex; gap: 0.45rem; margin-top: 0.5rem; }
+.custom-add input { flex: 1; min-width: 0; }
+.custom-add .btn { padding: 0.55rem 1rem; flex-shrink: 0; }
+.custom-add-stack { display: grid; gap: 0.45rem; margin-top: 0.5rem; }
+.chip .x { margin-left: 0.35rem; opacity: 0.7; font-weight: 700; }
 
 .manual-form { display: grid; gap: 0.4rem; }
 .nutrient-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.5rem; margin-bottom: 0.8rem; }
