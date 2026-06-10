@@ -574,6 +574,18 @@
     });
   }
 
+  var LENS_KEY = "safeshelf_lens";
+
+  // Rank rear lenses: main camera first, tele/zoom/macro/depth last
+  function lensScore(device) {
+    var l = (device.label || "").toLowerCase();
+    var s = 0;
+    if (/tele|zoom|macro|depth|bokeh/.test(l)) s -= 10;
+    if (/ultra|wide-?angle/.test(l)) s -= 3;
+    if (/camera2? 0|camera 0|back camera$|main|\bdual\b/.test(l)) s += 5;
+    return s;
+  }
+
   function openScanner() {
     openModal(
       "<h3>📷 Scan a code</h3>" +
@@ -581,17 +593,26 @@
       '<div class="scan-stage"><video class="scan-video" id="scanVideo" autoplay playsinline muted></video>' +
       '<div class="scan-reticle"></div></div>' +
       '<p class="scan-status" id="scanStatus">Starting camera…</p>' +
-      '<div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button></div>'
+      '<div class="modal-actions">' +
+      '<button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button>' +
+      '<button class="btn btn-ghost" id="lensBtn" type="button" hidden>🔄 Switch lens</button>' +
+      "</div>"
     );
     var video = $("#scanVideo");
     var statusEl = $("#scanStatus");
+    var lensBtn = $("#lensBtn");
     var stream = null, stopped = false, zxingReader = null;
+    var backCams = [], lensIdx = -1, detectorRunning = false;
 
     modalCleanup = function () {
       stopped = true;
-      if (zxingReader) { try { zxingReader.reset(); } catch (e) { /* already stopped */ } }
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stopStream();
     };
+
+    function stopStream() {
+      if (zxingReader) { try { zxingReader.reset(); } catch (e) { /* already stopped */ } zxingReader = null; }
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    }
 
     function finish(raw) {
       if (stopped) return;
@@ -609,19 +630,15 @@
       }
     }
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      statusEl.textContent = "📵 This browser can't access the camera. Type the barcode manually instead.";
-      return;
-    }
-
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    })
-      .then(function (s) {
+    function startStream(deviceId) {
+      stopStream();
+      var v = { width: { ideal: 1280 }, height: { ideal: 720 } };
+      if (deviceId) v.deviceId = { exact: deviceId };
+      else v.facingMode = "environment";
+      return navigator.mediaDevices.getUserMedia({ video: v, audio: false }).then(function (s) {
         if (stopped) { s.getTracks().forEach(function (t) { t.stop(); }); return null; }
         stream = s;
-        // some phones start the rear camera digitally zoomed — reset to minimum
+        // some phones hand over the rear camera digitally zoomed — reset to minimum
         var track = s.getVideoTracks()[0];
         if (track && track.getCapabilities) {
           var caps = track.getCapabilities();
@@ -631,36 +648,102 @@
         }
         video.srcObject = s;
         return video.play().catch(function () { /* autoplay quirks; video still renders */ });
-      })
+      });
+    }
+
+    function currentDeviceId() {
+      var track = stream && stream.getVideoTracks()[0];
+      return track && track.getSettings ? track.getSettings().deviceId : null;
+    }
+
+    function updateLensBtn() {
+      if (backCams.length < 2) return;
+      lensBtn.hidden = false;
+      var label = (backCams[lensIdx] && backCams[lensIdx].label || "").replace(/camera2?\s*/i, "").trim();
+      lensBtn.textContent = "🔄 Lens " + (lensIdx + 1) + "/" + backCams.length + (label ? " · " + label.slice(0, 18) : "");
+    }
+
+    function switchLens() {
+      if (!backCams.length) return;
+      lensIdx = (lensIdx + 1) % backCams.length;
+      statusEl.textContent = "Switching lens…";
+      startStream(backCams[lensIdx].deviceId).then(function () {
+        if (stopped) return;
+        try { localStorage.setItem(LENS_KEY, backCams[lensIdx].deviceId); } catch (e) { /* private mode */ }
+        statusEl.textContent = "Scanning…";
+        updateLensBtn();
+        startDetection(); // ZXing is stream-bound and needs re-attaching
+      }).catch(function () {
+        if (!stopped) statusEl.textContent = "That lens refused to start — try another.";
+      });
+    }
+    lensBtn.addEventListener("click", switchLens);
+
+    function startDetection() {
+      if (stopped || !stream) return;
+      if ("BarcodeDetector" in window) {
+        if (detectorRunning) return; // element-based loop survives lens switches
+        detectorRunning = true;
+        statusEl.textContent = "Scanning…";
+        var detector = new window.BarcodeDetector({
+          formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"]
+        });
+        (function loop() {
+          if (stopped) return;
+          detector.detect(video).then(function (codes) {
+            if (stopped) return;
+            if (codes && codes.length) finish(codes[0].rawValue);
+            else setTimeout(loop, 160);
+          }).catch(function () { if (!stopped) setTimeout(loop, 400); });
+        })();
+      } else {
+        // older browsers: fall back to the ZXing decoder
+        statusEl.textContent = "Loading scanner engine…";
+        loadScript("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js").then(function () {
+          if (stopped || !stream) return;
+          statusEl.textContent = "Scanning…";
+          zxingReader = new window.ZXing.BrowserMultiFormatReader();
+          zxingReader.decodeFromStream(stream, video, function (result) {
+            if (result) finish(result.getText());
+          });
+        }).catch(function () {
+          if (!stopped) statusEl.textContent = "Scanner engine failed to load — check your connection or type the barcode manually.";
+        });
+      }
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = "📵 This browser can't access the camera. Type the barcode manually instead.";
+      return;
+    }
+
+    var savedLens = null;
+    try { savedLens = localStorage.getItem(LENS_KEY); } catch (e) { /* private mode */ }
+
+    // First start grants permission (so device labels become readable), then we
+    // enumerate the rear lenses and jump to the best one if Chrome picked badly.
+    startStream(savedLens)
+      .catch(function () { return savedLens ? startStream(null) : Promise.reject(new Error("denied")); })
       .then(function () {
         if (stopped || !stream) return;
-        if ("BarcodeDetector" in window) {
-          statusEl.textContent = "Scanning…";
-          var detector = new window.BarcodeDetector({
-            formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"]
-          });
-          (function loop() {
-            if (stopped) return;
-            detector.detect(video).then(function (codes) {
-              if (stopped) return;
-              if (codes && codes.length) finish(codes[0].rawValue);
-              else setTimeout(loop, 160);
-            }).catch(function () { if (!stopped) setTimeout(loop, 400); });
-          })();
-        } else {
-          // older browsers: fall back to the ZXing decoder
-          statusEl.textContent = "Loading scanner engine…";
-          loadScript("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js").then(function () {
-            if (stopped) return;
-            statusEl.textContent = "Scanning…";
-            zxingReader = new window.ZXing.BrowserMultiFormatReader();
-            zxingReader.decodeFromStream(stream, video, function (result) {
-              if (result) finish(result.getText());
-            });
-          }).catch(function () {
-            if (!stopped) statusEl.textContent = "Scanner engine failed to load — check your connection or type the barcode manually.";
-          });
-        }
+        startDetection();
+        return navigator.mediaDevices.enumerateDevices().then(function (devices) {
+          if (stopped) return;
+          var cams = devices.filter(function (d) { return d.kind === "videoinput"; });
+          backCams = cams.filter(function (d) { return /back|rear|environment/i.test(d.label || ""); });
+          if (!backCams.length) backCams = cams;
+          backCams.sort(function (a, b) { return lensScore(b) - lensScore(a); });
+          var curId = currentDeviceId();
+          lensIdx = Math.max(0, backCams.findIndex(function (d) { return d.deviceId === curId; }));
+          // auto-correct to the highest-scored lens unless the user saved a choice
+          if (!savedLens && backCams.length > 1 && backCams[0].deviceId !== curId) {
+            lensIdx = 0;
+            startStream(backCams[0].deviceId).then(function () {
+              if (!stopped) { statusEl.textContent = "Scanning…"; updateLensBtn(); startDetection(); }
+            }).catch(function () { /* stay on the original lens */ });
+          }
+          updateLensBtn();
+        });
       })
       .catch(function () {
         if (!stopped) statusEl.textContent = "📵 Camera unavailable or permission denied — type the barcode manually instead.";
@@ -674,19 +757,72 @@
     return loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js", 30000);
   }
 
+  var OCR_STOPWORDS = { with: 1, from: 1, this: 1, that: 1, contains: 1, ingredients: 1, nutrition: 1,
+    best: 1, before: 1, net: 1, weight: 1, made: 1, pack: 1, free: 1, energy: 1, serving: 1,
+    quality: 1, taste: 1, premium: 1, original: 1, since: 1, india: 1, product: 1, litre: 1, gram: 1 };
+
   // Distil OCR text into a short search query: prominent-ish words, no noise
   function buildQuery(text) {
     var words = String(text || "").split(/[^A-Za-z]+/).filter(function (w) { return w.length >= 4; });
     var seen = {}, picked = [];
-    var stop = { with: 1, from: 1, this: 1, that: 1, contains: 1, ingredients: 1, nutrition: 1,
-      best: 1, before: 1, net: 1, weight: 1, made: 1, pack: 1, free: 1, energy: 1, serving: 1 };
     for (var i = 0; i < words.length && picked.length < 5; i++) {
       var w = words[i].toLowerCase();
-      if (stop[w] || seen[w]) continue;
+      if (OCR_STOPWORDS[w] || seen[w]) continue;
       seen[w] = 1;
       picked.push(w);
     }
     return picked.join(" ");
+  }
+
+  // Better: rank recognised words by physical size × confidence — the brand
+  // name is the biggest text on a pack, fine print loses automatically.
+  function buildQueryFromWords(words, fallbackText) {
+    var cand = (words || []).filter(function (w) {
+      return w && w.confidence >= 55 && /^[A-Za-z]{3,}$/.test(w.text) &&
+        !OCR_STOPWORDS[w.text.toLowerCase()];
+    });
+    cand.sort(function (a, b) {
+      var ha = a.bbox ? (a.bbox.y1 - a.bbox.y0) : 0;
+      var hb = b.bbox ? (b.bbox.y1 - b.bbox.y0) : 0;
+      return hb * b.confidence - ha * a.confidence;
+    });
+    var seen = {}, picked = [];
+    for (var i = 0; i < cand.length && picked.length < 4; i++) {
+      var t = cand[i].text.toLowerCase();
+      if (seen[t]) continue;
+      seen[t] = 1;
+      picked.push(t);
+    }
+    return picked.length ? picked.join(" ") : buildQuery(fallbackText);
+  }
+
+  // Downscale + grayscale + boost contrast before OCR: phone photos are far
+  // too large and too noisy for Tesseract as-is.
+  function preprocessPhoto(file) {
+    var opts = { imageOrientation: "from-image" };
+    var bitmapPromise = typeof createImageBitmap === "function"
+      ? createImageBitmap(file, opts).catch(function () { return createImageBitmap(file); })
+      : Promise.reject(new Error("unsupported"));
+    return bitmapPromise.then(function (bmp) {
+      var MAX = 1280;
+      var scale = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(bmp.width * scale);
+      canvas.height = Math.round(bmp.height * scale);
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      bmp.close && bmp.close();
+      var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var d = img.data;
+      for (var i = 0; i < d.length; i += 4) {
+        var g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        g = (g - 128) * 1.35 + 128; // contrast stretch
+        g = g < 0 ? 0 : g > 255 ? 255 : g;
+        d[i] = d[i + 1] = d[i + 2] = g;
+      }
+      ctx.putImageData(img, 0, 0);
+      return canvas;
+    });
   }
 
   function handlePhoto(file) {
@@ -714,10 +850,14 @@
     }
 
     ensureTesseract().then(function () {
+      setStatus("Preparing your photo…");
+      return preprocessPhoto(file).catch(function () { return file; }); // OCR the raw file if preprocessing fails
+    }).then(function (input) {
       setStatus("Reading the label… this takes a few seconds.");
-      return window.Tesseract.recognize(file, "eng");
+      return window.Tesseract.recognize(input, "eng");
     }).then(function (res) {
-      var query = buildQuery(res && res.data && res.data.text);
+      var data = (res && res.data) || {};
+      var query = buildQueryFromWords(data.words, data.text);
       if (!query) {
         setStatus("Couldn't read any text — try a sharper, closer photo, or type the product name:");
         showQueryUI("");

@@ -295,22 +295,45 @@
     });
   }
 
-  // Free-text product search (used by photo identify) — Open Food Facts search API
+  function fetchJsonWithTimeout(url, ms) {
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctrl && setTimeout(function () { ctrl.abort(); }, ms || 12000);
+    return fetch(url, ctrl ? { signal: ctrl.signal } : undefined).then(function (res) {
+      if (timer) clearTimeout(timer);
+      if (!res.ok) throw new Error("http " + res.status);
+      return res.json();
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
+    });
+  }
+
+  // Free-text product search (used by photo identify).
+  // Primary: Open Food Facts Search-a-licious; fallback: legacy CGI search.
   function searchProducts(query) {
-    var url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=8" +
+    function normalise(items) {
+      return (items || []).filter(function (p) { return p && p.code; }).map(function (p) {
+        var name = p.product_name;
+        if (name && typeof name === "object") name = name.en || Object.values(name)[0];
+        var brands = p.brands;
+        if (Array.isArray(brands)) brands = brands.join(", ");
+        return {
+          code: String(p.code),
+          name: name || "Unknown product",
+          brands: brands || "",
+          image: p.image_front_small_url || p.image_small_url || p.image_front_url || p.image_url || null
+        };
+      });
+    }
+    var primary = "https://search.openfoodfacts.org/search?page_size=8&q=" + encodeURIComponent(query);
+    var legacy = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=8" +
       "&search_terms=" + encodeURIComponent(query) +
       "&fields=code,product_name,brands,image_small_url";
-    return fetch(url).then(function (res) {
-      if (!res.ok) throw new Error("network");
-      return res.json();
-    }).then(function (data) {
-      return (data.products || []).filter(function (p) { return p.code; }).map(function (p) {
-        return {
-          code: p.code,
-          name: p.product_name || "Unknown product",
-          brands: p.brands || "",
-          image: p.image_small_url || null
-        };
+    return fetchJsonWithTimeout(primary, 12000).then(function (data) {
+      return normalise(data.hits);
+    }).catch(function () {
+      return fetchJsonWithTimeout(legacy, 12000).then(function (data) {
+        return normalise(data.products);
       });
     });
   }
