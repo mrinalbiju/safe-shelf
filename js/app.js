@@ -614,10 +614,21 @@
       return;
     }
 
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    })
       .then(function (s) {
         if (stopped) { s.getTracks().forEach(function (t) { t.stop(); }); return null; }
         stream = s;
+        // some phones start the rear camera digitally zoomed — reset to minimum
+        var track = s.getVideoTracks()[0];
+        if (track && track.getCapabilities) {
+          var caps = track.getCapabilities();
+          if (caps.zoom && typeof caps.zoom.min === "number") {
+            track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(function () {});
+          }
+        }
         video.srcObject = s;
         return video.play().catch(function () { /* autoplay quirks; video still renders */ });
       })

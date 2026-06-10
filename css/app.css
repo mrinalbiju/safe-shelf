@@ -171,7 +171,7 @@ input:focus, select:focus { outline: 2px solid rgba(52, 211, 153, 0.5); border-c
   background: #000;
   margin-bottom: 0.8rem;
 }
-.scan-video { display: block; width: 100%; max-height: 58svh; object-fit: cover; }
+.scan-video { display: block; width: 100%; height: auto; max-height: 58svh; object-fit: contain; }
 .scan-reticle {
   position: absolute;
   inset: 18% 12%;
