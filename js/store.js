@@ -163,10 +163,9 @@
       }
     });
 
-    // 1b. Custom free-text allergens: substring match on ingredients + name
+    // 1b. Custom free-text allergens: whole-word match on ingredients + name
     (user.customAllergens || []).forEach(function (term) {
-      var t = String(term).toLowerCase().trim();
-      if (t && haystack.indexOf(t) !== -1) {
+      if (termHit(haystack, term)) {
         reasons.push({ kind: "allergen", severity: "unsafe",
           text: "✳️ " + term + " (custom allergen) — found in this product" });
       }
@@ -200,8 +199,7 @@
       }
       var hit = false;
       avoid.forEach(function (term) {
-        var t = String(term).toLowerCase().trim();
-        if (t && haystack.indexOf(t) !== -1) {
+        if (termHit(haystack, term)) {
           hit = true;
           reasons.push({ kind: "condition", severity: "unsafe",
             text: "🩺 " + cc.name + " (custom) — contains " + term });
@@ -464,6 +462,84 @@
       avoid: [], source: "use the built-in Chronic kidney disease toggle — it applies NKF thresholds automatically" }
   ];
 
+  // Food/ingredient lexicon used to mine "avoid" sentences in encyclopedia text
+  var FOOD_LEXICON = [
+    "red meat", "organ meat", "processed meat", "cured meat", "smoked meat", "beef", "pork", "mutton", "lamb", "liver", "kidney",
+    "sausage", "bacon", "salami", "ham", "chicken", "gelatin",
+    "shellfish", "shrimp", "prawn", "crab", "lobster", "anchovy", "sardine", "mackerel", "herring", "tuna", "oyster", "mussel", "clam", "scallop", "fish", "roe",
+    "aged cheese", "cheese", "whole milk", "milk", "butter", "ghee", "cream", "ice cream", "yogurt", "whey", "egg",
+    "gluten", "wheat", "barley", "rye", "semolina", "white bread", "bread", "pasta", "refined carbohydrate", "refined grain",
+    "soy", "beans", "lentil", "chickpea", "peanut", "fava bean", "broad bean", "tree nut", "almond", "walnut", "cashew", "nuts",
+    "grapefruit juice", "grapefruit", "citrus", "orange", "lemon", "tomato", "onion", "garlic", "mushroom", "spinach", "kale", "leafy green",
+    "banana", "avocado", "dried fruit", "pickle", "pickled", "fermented", "sauerkraut",
+    "alcohol", "beer", "red wine", "wine", "liquor", "coffee", "caffeine", "energy drink", "soft drink", "soda", "cola", "fruit juice", "sugary drink", "sweetened beverage",
+    "added sugar", "sugar", "sweets", "chocolate", "candy", "honey", "syrup", "high fructose", "jaggery",
+    "fried food", "fried", "deep-fried", "fast food", "junk food", "processed food", "canned",
+    "saturated fat", "trans fat", "palm oil", "lard", "hydrogenated",
+    "salt", "sodium", "monosodium glutamate", "msg", "aspartame", "artificial sweetener", "nitrate", "nitrite", "sulfite", "sulphite", "preservative", "food colouring", "food coloring",
+    "spicy food", "spicy", "chilli", "chili", "black pepper", "peppermint", "mint",
+    "yeast extract", "yeast", "licorice", "liquorice", "iron-fortified", "vitamin k", "purine", "oxalate", "tyramine", "histamine",
+    "lactose", "fructose", "sorbitol", "mannitol", "caffeinated"
+  ];
+
+  // Whole-word matcher (with simple plural tolerance) so "cola" can't match
+  // inside "chocolate" and "egg" can't match inside "eggplant"
+  function termRegex(term) {
+    var escaped = String(term).trim().toLowerCase()
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s+");
+    return new RegExp("\\b" + escaped + "(?:e?s)?\\b", "i");
+  }
+  function termHit(text, term) {
+    return term && termRegex(term).test(text);
+  }
+
+  // Pull food terms out of sentences that talk about avoiding/limiting/triggering
+  function extractAvoidTerms(text) {
+    var trigger = /(avoid|limit|restrict|eliminat|cut (?:out|down)|reduce (?:intake|consumption|the amount)|should not (?:eat|drink|consume)|refrain from|worsen|aggravat|trigger|exacerbat|flare|contraindicat|high in purine|low[- ](?:sodium|purine|fodmap|tyramine|iodine|oxalate) diet)/i;
+    var found = {}, order = [];
+    String(text || "").split(/[.;\n]\s*/).forEach(function (sentence) {
+      if (!trigger.test(sentence)) return;
+      FOOD_LEXICON.forEach(function (term) {
+        if (!found[term] && termHit(sentence, term)) {
+          found[term] = 1;
+          order.push(term);
+        }
+      });
+    });
+    // drop terms subsumed by a longer matched phrase ("spicy" when "spicy food" matched)
+    return order.filter(function (t) {
+      return !order.some(function (other) { return other !== t && other.indexOf(t) !== -1; });
+    }).slice(0, 12);
+  }
+
+  // Dietary guidance for ANY illness: curated table first (vetted), then
+  // auto-extraction from the condition's Wikipedia article (open data, CORS).
+  function fetchAvoidGuidance(name) {
+    var curated = suggestAvoidFor(name);
+    if (curated) {
+      return Promise.resolve({ avoid: curated.avoid.slice(), source: curated.source, origin: "curated" });
+    }
+    var api = "https://en.wikipedia.org/w/api.php?format=json&origin=*";
+    return fetchJsonWithTimeout(api + "&action=opensearch&limit=1&search=" + encodeURIComponent(name), 10000)
+      .then(function (os) {
+        var title = os && os[1] && os[1][0];
+        if (!title) return { avoid: [], source: "no encyclopedia article found for \"" + name + "\"", origin: "none" };
+        return fetchJsonWithTimeout(api + "&action=query&prop=extracts&explaintext=1&redirects=1&titles=" +
+          encodeURIComponent(title), 15000).then(function (q) {
+            var pages = (q && q.query && q.query.pages) || {};
+            var text = "";
+            Object.keys(pages).forEach(function (k) { text += pages[k].extract || ""; });
+            var avoid = extractAvoidTerms(text);
+            if (!avoid.length) {
+              return { avoid: [], source: "Wikipedia's \"" + title + "\" article has no clear dietary-avoidance guidance", origin: "wikipedia" };
+            }
+            return { avoid: avoid, title: title,
+              source: "auto-extracted from Wikipedia \"" + title + "\" — verify with your doctor", origin: "wikipedia" };
+          });
+      });
+  }
+
   function suggestAvoidFor(name) {
     var n = String(name || "").toLowerCase();
     for (var i = 0; i < CONDITION_GUIDANCE.length; i++) {
@@ -510,6 +586,8 @@
     fetchPrice: fetchPrice,
     searchConditions: searchConditions,
     suggestAvoidFor: suggestAvoidFor,
+    fetchAvoidGuidance: fetchAvoidGuidance,
+    extractAvoidTerms: extractAvoidTerms,
     searchProducts: searchProducts,
     load: load,
     save: save,

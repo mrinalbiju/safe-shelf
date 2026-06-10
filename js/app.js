@@ -390,10 +390,7 @@
       var html = '<button type="button" class="chip on" data-action="rm-custom-cond" data-idx="' + i + '">🩺 ' +
         esc(cc.name) + avoids + '<span class="x">✕</span></button>';
       if (!(cc.avoid || []).length) {
-        var g = S.suggestAvoidFor(cc.name);
-        if (g && g.avoid.length) {
-          html += '<button type="button" class="chip" data-action="import-avoid" data-idx="' + i + '">💡 Import avoid-list</button>';
-        }
+        html += '<button type="button" class="chip" data-action="import-avoid" data-idx="' + i + '">💡 Fetch avoid-list</button>';
       }
       return html;
     }).join("") || '<span class="hint">Nothing custom yet.</span>';
@@ -432,7 +429,7 @@
         '<div class="custom-add"><input type="text" id="fCustomCondName" maxlength="60" placeholder="Other illness, e.g. gout" />' +
         '<button type="button" class="btn btn-ghost" data-action="find-cond">🔍 Find</button></div>' +
         '<div class="cand-list" id="fCondResults"></div>' +
-        '<p class="hint" id="fCondNote">Tap Find — I\'ll recognise the illness via the NIH ICD-10 catalogue and import a suggested avoid-list where trusted guidance exists.</p>' +
+        '<p class="hint" id="fCondNote">Tap Find — I\'ll recognise the illness via the NIH ICD-10 catalogue, then fetch foods-to-avoid from curated clinical guidance or the condition\'s Wikipedia article.</p>' +
         '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="200" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
         '<button type="button" class="btn btn-ghost" data-action="add-custom-cond">＋ Add</button></div></div>' +
         '<p class="hint">⚠️ The avoid-list is what gets checked — without it, products can\'t be auto-screened for this illness and will show "needs a closer look".</p>' +
@@ -1034,19 +1031,22 @@
     });
   }
 
-  // Fill the avoid-list input from curated guidance for a recognised illness;
-  // falls back to the supplied message when we have nothing curated.
-  function applyCondGuidance(name, noteEl, noGuidanceMsg) {
-    var g = S.suggestAvoidFor(name);
-    if (g && g.avoid.length) {
-      $("#fCustomCondAvoid").value = g.avoid.join(", ");
-      if (noteEl) noteEl.textContent = "💡 Imported suggested avoid-list (" + g.source +
-        "). Edit it, then tap ＋ Add. Confirm with your doctor.";
-    } else if (g) {
-      if (noteEl) noteEl.textContent = "💡 " + g.source;
-    } else if (noteEl) {
-      noteEl.textContent = noGuidanceMsg;
-    }
+  // Fill the avoid-list input with dietary guidance for an illness: curated
+  // table first, then auto-extraction from the condition's Wikipedia article.
+  function applyCondGuidance(name, noteEl, failMsg) {
+    if (noteEl) noteEl.textContent = "🔎 Looking up dietary guidance for \"" + name + "\"…";
+    S.fetchAvoidGuidance(name).then(function (g) {
+      if (!noteEl || !noteEl.isConnected) return;
+      if (g.avoid.length) {
+        var input = $("#fCustomCondAvoid");
+        if (input) input.value = g.avoid.join(", ");
+        noteEl.textContent = "💡 Suggested avoid-list (" + g.source + "). Edit it, then tap ＋ Add.";
+      } else {
+        noteEl.textContent = "ℹ️ " + g.source + " — add your own avoid terms below.";
+      }
+    }).catch(function () {
+      if (noteEl && noteEl.isConnected) noteEl.textContent = failMsg || "📡 Couldn't fetch guidance — add avoid terms manually.";
+    });
   }
 
   /* =================== actions (event delegation) =================== */
@@ -1110,7 +1110,7 @@
           if (!matches.length) {
             resBox.innerHTML = "";
             applyCondGuidance(term, noteEl,
-              "Not found in the ICD-10 catalogue — check the spelling, or add it manually.");
+              "Not in the ICD-10 catalogue and no guidance found — check the spelling or add avoid terms manually.");
             return;
           }
           resBox.innerHTML = matches.map(function (m) {
@@ -1123,7 +1123,7 @@
           if (!resBox.isConnected) return;
           resBox.innerHTML = "";
           applyCondGuidance(term, noteEl,
-            "📡 Couldn't reach the NIH catalogue — used built-in guidance instead.");
+            "📡 Couldn't reach the online catalogues — add avoid terms manually.");
         });
         break;
       }
@@ -1133,7 +1133,7 @@
         $("#fCustomCondName").value = picked;
         $("#fCondResults").innerHTML = "";
         applyCondGuidance(picked, $("#fCondNote"),
-          "✅ Recognised via NIH ICD-10 — no curated avoid-list for this one; add your own terms.");
+          "📡 Recognised via NIH ICD-10, but couldn't fetch dietary guidance — add your own terms.");
         break;
       }
 
@@ -1153,11 +1153,22 @@
       case "import-avoid": {
         var cidx = parseInt(btn.dataset.idx, 10);
         var cond = formCustom.conditions[cidx];
-        var gg = cond && S.suggestAvoidFor(cond.name);
-        if (!gg || !gg.avoid.length) break;
-        cond.avoid = gg.avoid.slice();
-        refreshCustomLists();
-        toast("💡 Imported (" + gg.source.split("·")[0].trim() + "). Edit the chip by removing and re-adding if needed, then Save.");
+        if (!cond) break;
+        btn.textContent = "🔎 Fetching…";
+        btn.disabled = true;
+        S.fetchAvoidGuidance(cond.name).then(function (gg) {
+          if (gg.avoid.length) {
+            cond.avoid = gg.avoid.slice();
+            refreshCustomLists();
+            toast("💡 Imported avoid-list — " + gg.source + ". Review it, then Save.");
+          } else {
+            refreshCustomLists();
+            toast("ℹ️ " + gg.source + ". Add avoid terms manually.", true);
+          }
+        }).catch(function () {
+          refreshCustomLists();
+          toast("📡 Couldn't fetch guidance — check your connection or add terms manually.", true);
+        });
         break;
       }
 
