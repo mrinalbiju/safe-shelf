@@ -425,6 +425,7 @@
         '<input type="text" id="fCustomCondName" maxlength="40" placeholder="Other illness, e.g. gout" />' +
         '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="120" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
         '<button type="button" class="btn btn-ghost" data-action="add-custom-cond">＋ Add</button></div></div>' +
+        '<p class="hint">⚠️ The avoid-list is what gets checked — without it, products can\'t be auto-screened for this illness and will show "needs a closer look".</p>' +
         '<div class="chip-select" id="fCustomCondList">' + customCondChips() + "</div></div>" +
       '<div class="field"><label>Lifestyle preferences</label><div class="chip-select" id="fLifestyle">' +
         chipGroup(S.LIFESTYLES, u.lifestyle || [], "ls") + "</div></div>" +
@@ -577,10 +578,10 @@
 
     var bannerText = r.isGroup
       ? (r.aggregate === "safe" ? "Safe for the whole group"
-        : r.aggregate === "caution" ? "Preference conflicts — check below"
+        : r.aggregate === "caution" ? "Needs a closer look — see below"
         : "Not suitable for everyone")
       : (r.aggregate === "safe" ? "Safe for you"
-        : r.aggregate === "caution" ? "Possible preference conflict"
+        : r.aggregate === "caution" ? "Needs a closer look — see below"
         : "Not suitable for you");
 
     var membersHtml = r.perMember.map(function (m) {

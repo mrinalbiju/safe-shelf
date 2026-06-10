@@ -188,15 +188,29 @@
       });
     });
 
-    // 2b. Custom illnesses: presence-based against their own avoid-list
+    // 2b. Custom illnesses: presence-based against their own avoid-list.
+    // No avoid-list means we have nothing to test — disclose that instead of
+    // letting a clean green verdict imply the illness was checked.
     (user.customConditions || []).forEach(function (cc) {
-      (cc.avoid || []).forEach(function (term) {
+      var avoid = (cc.avoid || []).filter(function (t) { return String(t).trim(); });
+      if (!avoid.length) {
+        reasons.push({ kind: "condition", severity: "caution",
+          text: "🩺 " + cc.name + " — NOT auto-checked: no avoid-list set on the profile. Add ingredients to avoid, or review the label manually." });
+        return;
+      }
+      var hit = false;
+      avoid.forEach(function (term) {
         var t = String(term).toLowerCase().trim();
         if (t && haystack.indexOf(t) !== -1) {
+          hit = true;
           reasons.push({ kind: "condition", severity: "unsafe",
             text: "🩺 " + cc.name + " (custom) — contains " + term });
         }
       });
+      if (!hit) {
+        reasons.push({ kind: "condition", severity: "info",
+          text: "🩺 " + cc.name + " — checked against your avoid-list (" + avoid.join(", ") + "), no matches." });
+      }
     });
 
     // lifestyle numeric rules join the pool; lifestyle presence is "caution"
@@ -237,7 +251,8 @@
 
     var status = "safe";
     if (reasons.some(function (r) { return r.severity === "unsafe"; })) status = "unsafe";
-    else if (reasons.length) status = "caution";
+    else if (reasons.some(function (r) { return r.severity === "caution"; })) status = "caution";
+    // "info" reasons (e.g. avoid-list checked with no matches) are disclosed but don't change the verdict
     return { status: status, reasons: reasons };
   }
 

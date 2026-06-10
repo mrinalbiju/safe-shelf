@@ -510,6 +510,7 @@ input:focus, select:focus { outline: 2px solid rgba(52, 211, 153, 0.5); border-c
 .reason-list li::before { content: "•"; position: absolute; left: 0.3rem; }
 .reason-list li.unsafe { color: #fca5a5; }
 .reason-list li.caution { color: #fcd34d; }
+.reason-list li.info { color: var(--muted); }
 
 .nutri-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
 .nutri-strip .mini-chip { font-size: 0.72rem; }
