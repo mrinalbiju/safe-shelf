@@ -387,8 +387,15 @@
   function customCondChips() {
     return formCustom.conditions.map(function (cc, i) {
       var avoids = (cc.avoid || []).length ? " · avoids: " + esc(cc.avoid.join(", ")) : "";
-      return '<button type="button" class="chip on" data-action="rm-custom-cond" data-idx="' + i + '">🩺 ' +
+      var html = '<button type="button" class="chip on" data-action="rm-custom-cond" data-idx="' + i + '">🩺 ' +
         esc(cc.name) + avoids + '<span class="x">✕</span></button>';
+      if (!(cc.avoid || []).length) {
+        var g = S.suggestAvoidFor(cc.name);
+        if (g && g.avoid.length) {
+          html += '<button type="button" class="chip" data-action="import-avoid" data-idx="' + i + '">💡 Import avoid-list</button>';
+        }
+      }
+      return html;
     }).join("") || '<span class="hint">Nothing custom yet.</span>';
   }
   function refreshCustomLists() {
@@ -588,6 +595,8 @@
         : "Not suitable for you");
 
     var membersHtml = r.perMember.map(function (m) {
+      var needsFix = m.user.id === state.currentUserId &&
+        m.reasons.some(function (rs) { return rs.text.indexOf("NOT auto-checked") !== -1; });
       return '<div class="member-result">' +
         '<div class="member-result-head">' + m.user.emoji + " " + esc(m.user.name) +
           '<span class="verdict ' + m.status + '">' + verdictText(m.status) + "</span></div>" +
@@ -595,6 +604,9 @@
           ? '<ul class="reason-list">' + m.reasons.map(function (rs) {
               return '<li class="' + rs.severity + '">' + esc(rs.text) + "</li>";
             }).join("") + "</ul>"
+          : "") +
+        (needsFix
+          ? '<button class="btn btn-ghost btn-sm" data-action="fix-profile" type="button" style="margin-top:0.55rem">⚙️ Fix my profile — add the avoid-list</button>'
           : "") +
       "</div>";
     }).join("");
@@ -1135,6 +1147,25 @@
         nameInput.value = ""; avoidInput.value = "";
         refreshCustomLists();
         if (!avoid.length) toast("Added. Tip: list ingredients to avoid so I can auto-check products for it.", true);
+        break;
+      }
+
+      case "import-avoid": {
+        var cidx = parseInt(btn.dataset.idx, 10);
+        var cond = formCustom.conditions[cidx];
+        var gg = cond && S.suggestAvoidFor(cond.name);
+        if (!gg || !gg.avoid.length) break;
+        cond.avoid = gg.avoid.slice();
+        refreshCustomLists();
+        toast("💡 Imported (" + gg.source.split("·")[0].trim() + "). Edit the chip by removing and re-adding if needed, then Save.");
+        break;
+      }
+
+      case "fix-profile": {
+        var me = currentUser();
+        if (!me) break;
+        closeModal();
+        openUserForm(me);
         break;
       }
 
