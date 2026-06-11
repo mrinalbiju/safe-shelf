@@ -36,14 +36,54 @@
       session = s;
       status = s ? "signedin" : "signedout";
       emit();
-      if (s && !wasSignedIn) pull();
+      if (s && !wasSignedIn) { pull(); startRealtime(); }
+      if (!s) stopRealtime();
     });
     client.auth.getSession().then(function (res) {
       session = res.data ? res.data.session : null;
       status = session ? "signedin" : "signedout";
       emit();
-      if (session) pull();
+      if (session) { pull(); startRealtime(); }
     });
+    // autosync: re-pull whenever the tab comes back into view, so changes
+    // made on another device show up without a reload
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible" && session) pull();
+    });
+  }
+
+  // ---- realtime: apply changes pushed from other devices as they happen ----
+
+  var channel = null;
+
+  function applyRemoteRow(row) {
+    if (!row || !row.payload) return;
+    var local = hooks.getLocal ? hooks.getLocal() : null;
+    var localTs = (local && local.updatedAt) || 0;
+    var remoteTs = new Date(row.updated_at).getTime();
+    // our own pushes echo back with the same timestamp — only apply newer
+    if (remoteTs > localTs) {
+      lastSync = Date.now();
+      if (hooks.onRemoteState) hooks.onRemoteState(row.payload);
+      emit();
+    }
+  }
+
+  function startRealtime() {
+    if (!client || !session || channel) return;
+    var me = session.user.id;
+    channel = client.channel("user-data-" + me)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "user_data", filter: "user_id=eq." + me },
+        function (payload) { applyRemoteRow(payload["new"]); })
+      .subscribe();
+  }
+
+  function stopRealtime() {
+    if (channel && client) {
+      try { client.removeChannel(channel); } catch (e) { /* already gone */ }
+    }
+    channel = null;
   }
 
   function friendly(err) {

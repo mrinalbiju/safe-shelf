@@ -433,7 +433,7 @@
         '<p class="card-sub">Cloud sync is unreachable right now — the app keeps working from this device\'s storage.</p>';
     } else if (info.status === "signedin") {
       box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
-        '<p class="card-sub">Signed in as <strong>' + esc(info.email) + "</strong>. Profiles, groups and carts sync to your account" +
+        '<p class="card-sub">Signed in as <strong>' + esc(info.email) + "</strong>. Profiles, groups and carts sync automatically — changes from your other devices appear live" +
         (info.lastSync ? " · last synced " + timeAgo(info.lastSync) : "") + ".</p>" +
         '<div class="user-actions">' +
         '<button class="btn btn-ghost" data-action="acct-sync" type="button">🔄 Sync now</button>' +
