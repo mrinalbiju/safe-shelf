@@ -363,10 +363,15 @@
 
   /* =================== AI settings =================== */
 
+  var serverAiOn = false;
   function renderAiCard() {
     var status = $("#aiStatus"), btn = $("#aiKeyBtn");
     if (!status || !btn) return;
-    if (S.getAiKey()) {
+    if (serverAiOn) {
+      status.textContent = "On (site key) — AI checks run through this site's server; no setup needed. " +
+        (S.getAiKey() ? "Your personal key is the backup." : "");
+      btn.textContent = S.getAiKey() ? "Remove personal API key" : "🔑 Set personal key (optional backup)";
+    } else if (S.getAiKey()) {
       status.textContent = "On — every verdict gets an AI second opinion (Llama 3.3 via Groq), and illness avoid-lists are AI-generated. Your key stays on this device only.";
       btn.textContent = "Remove API key";
     } else {
@@ -623,7 +628,7 @@
   }
 
   function aiStatusLine(r) {
-    if (!S.getAiKey()) return "";
+    if (!S.aiAvailable()) return "";
     var msg = {
       pending: "🤖 AI second opinion running…",
       done: "🤖 Verdict includes the AI assessment (Llama 3.3 via Groq).",
@@ -637,7 +642,7 @@
     var r = lastResult;
     var p = r.product;
     var n = p.nutrition || {};
-    if (S.getAiKey() && !r.aiState) runAiAssessment(r);
+    if (S.aiAvailable() && !r.aiState) runAiAssessment(r);
     var nutriBits = Object.keys(S.NUTRIENT_LABELS).map(function (key) {
       if (n[key] == null) return '<span class="mini-chip">' + S.NUTRIENT_LABELS[key] + ": n/a</span>";
       var unit = key === "sodium" ? "mg" : "g";
@@ -1470,6 +1475,10 @@
 
   buildManualChips();
   renderAiCard();
+  S.checkServerAi().then(function (hasServer) {
+    serverAiOn = hasServer;
+    renderAiCard();
+  });
   renderAll();
 
   if (location.hash === "#groups") showTab("groups");

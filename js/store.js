@@ -525,7 +525,7 @@
     }
     // With AI enabled it leads (full clinical context beats keyword tables);
     // curated table and Wikipedia extraction remain as fallbacks.
-    if (getAiKey()) {
+    if (aiAvailable()) {
       return aiAvoidList(name).then(function (g) {
         return g.avoid.length ? g : curatedOrWiki().catch(function () { return g; });
       }).catch(function () {
@@ -580,24 +580,35 @@
     } catch (e) { /* private mode */ }
   }
 
-  function aiChat(messages) {
-    var key = getAiKey();
-    if (!key) return Promise.reject(new Error("nokey"));
+  // Server proxy availability: /api/groq holds the key in a Vercel env var,
+  // so visitors get AI checks with zero setup. Probed once per session.
+  var serverAi = null; // null = not probed yet
+  function checkServerAi() {
+    if (serverAi !== null) return Promise.resolve(serverAi);
+    return fetchJsonWithTimeout("/api/groq", 6000).then(function (d) {
+      serverAi = !!(d && d.hasKey);
+      return serverAi;
+    }).catch(function () {
+      serverAi = false;
+      return false;
+    });
+  }
+  function aiAvailable() {
+    return serverAi === true || !!getAiKey();
+  }
+
+  function postAiRequest(url, headers, body) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl && setTimeout(function () { ctrl.abort(); }, 25000);
-    return fetch("https://api.groq.com/openai/v1/chat/completions", {
+    return fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: messages
-      }),
+      headers: headers,
+      body: JSON.stringify(body),
       signal: ctrl ? ctrl.signal : undefined
     }).then(function (res) {
       if (timer) clearTimeout(timer);
       if (res.status === 401 || res.status === 403) throw new Error("badkey");
+      if (res.status === 503) throw new Error("nokey");
       if (!res.ok) throw new Error("ai " + res.status);
       return res.json();
     }, function (err) {
@@ -606,6 +617,25 @@
     }).then(function (d) {
       var content = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
       return JSON.parse(content);
+    });
+  }
+
+  function aiChat(messages) {
+    return checkServerAi().then(function (hasServer) {
+      var direct = function () {
+        var key = getAiKey();
+        if (!key) return Promise.reject(new Error("nokey"));
+        return postAiRequest("https://api.groq.com/openai/v1/chat/completions",
+          { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+          { model: "llama-3.3-70b-versatile", temperature: 0.2, max_tokens: 1024,
+            response_format: { type: "json_object" }, messages: messages });
+      };
+      if (!hasServer) return direct();
+      return postAiRequest("/api/groq", { "Content-Type": "application/json" }, { messages: messages })
+        .catch(function (err) {
+          // server proxy lost its key or broke mid-session — try the local key
+          return getAiKey() ? direct() : Promise.reject(err);
+        });
     });
   }
 
@@ -692,6 +722,8 @@
     extractAvoidTerms: extractAvoidTerms,
     getAiKey: getAiKey,
     setAiKey: setAiKey,
+    checkServerAi: checkServerAi,
+    aiAvailable: aiAvailable,
     aiSuitability: aiSuitability,
     searchProducts: searchProducts,
     load: load,
