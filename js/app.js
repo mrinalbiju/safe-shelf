@@ -108,6 +108,7 @@
     if (modalCleanup) { modalCleanup(); modalCleanup = null; }
     $("#modalBackdrop").hidden = true;
     document.body.style.overflow = "";
+    onboardAutoOpened = false; // whatever opens next isn't the onboarding nag
   }
   $("#modalBackdrop").addEventListener("click", function (e) {
     if (e.target === this) closeModal();
@@ -1592,12 +1593,33 @@
 
   /* =================== boot =================== */
 
+  // deferred first-run onboarding: opens the add-profile form only if there
+  // are still no profiles when the timer fires (and nothing else is open)
+  var onboardTimer = null, onboardAutoOpened = false;
+  function scheduleOnboard(delay) {
+    clearTimeout(onboardTimer);
+    onboardTimer = setTimeout(function () {
+      if (!state.users.length && $("#modalBackdrop").hidden) {
+        onboardAutoOpened = true;
+        openUserForm(null);
+      }
+    }, delay);
+  }
+  function cancelOnboard() {
+    clearTimeout(onboardTimer);
+    if (onboardAutoOpened && !$("#modalBackdrop").hidden && state.users.length) {
+      closeModal(); // profiles just arrived from the account — drop the nag
+    }
+    onboardAutoOpened = false;
+  }
+
   buildManualChips();
   renderAiCard();
   S.checkServerAi().then(function (hasServer) {
     serverAiOn = hasServer;
     renderAiCard();
   });
+  var bootStatusSeen = false;
   if (window.SafeShelfCloud) {
     window.SafeShelfCloud.init({
       getLocal: function () { return state; },
@@ -1612,6 +1634,7 @@
         state = remote;
         S.save(state); // keep remote's timestamp — no persist(), or we'd echo it straight back up
         renderAll();
+        cancelOnboard();
         toast("☁️ Loaded your account data.");
       },
       onResetState: function () {
@@ -1621,7 +1644,17 @@
         renderAll();
         toast("☁️ Signed in — starting fresh for this account.");
       },
-      onStatus: function () { renderAccount(); }
+      onStatus: function (info) {
+        renderAccount();
+        if (!bootStatusSeen && info.status !== "loading") {
+          bootStatusSeen = true;
+          if (!state.users.length) {
+            // signed-in: give the cloud copy time to land before nagging;
+            // signed-out/unavailable: behave like a plain first run
+            scheduleOnboard(info.status === "signedin" ? 4000 : 450);
+          }
+        }
+      }
     });
   }
   renderAccount();
@@ -1629,8 +1662,8 @@
 
   if (location.hash === "#groups") showTab("groups");
 
-  // first-run onboarding (FR-10.1, quick path)
-  if (!state.users.length) {
-    setTimeout(function () { openUserForm(null); }, 450);
-  }
+  // first-run onboarding (FR-10.1, quick path) — when cloud sync is available
+  // the scheduling instead happens once the auth status is known, so signing
+  // in never pops the form while the account's profiles are still loading
+  if (!window.SafeShelfCloud && !state.users.length) scheduleOnboard(450);
 })();
