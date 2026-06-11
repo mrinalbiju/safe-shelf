@@ -1096,14 +1096,35 @@
     });
   }
 
+  // downscaled JPEG data-URL for the vision model (keeps uploads small)
+  function photoToDataUrl(file, maxDim) {
+    var opts = { imageOrientation: "from-image" };
+    var bitmapPromise = typeof createImageBitmap === "function"
+      ? createImageBitmap(file, opts).catch(function () { return createImageBitmap(file); })
+      : Promise.reject(new Error("unsupported"));
+    return bitmapPromise.then(function (bmp) {
+      var scale = Math.min(1, (maxDim || 1024) / Math.max(bmp.width, bmp.height));
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(bmp.width * scale);
+      canvas.height = Math.round(bmp.height * scale);
+      canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      bmp.close && bmp.close();
+      return canvas.toDataURL("image/jpeg", 0.85);
+    });
+  }
+
+  var photoIdentified = null; // last AI identification, for the direct-check button
+
   function handlePhoto(file) {
     if (!file) return;
+    photoIdentified = null;
     var blobUrl = URL.createObjectURL(file);
+    var useAi = S.aiAvailable();
     openModal(
       '<h3>🖼️ Photo identify</h3>' +
-      '<p class="sub">I\'ll read the label text and search for matching products.</p>' +
+      '<p class="sub">' + (useAi ? "AI looks at the photo and names the product — like a lens, but for food." : "I'll read the label text and search for matching products.") + '</p>' +
       '<img class="photo-preview" alt="Your product photo" src="' + blobUrl + '" />' +
-      '<p class="scan-status" id="idStatus">Loading text-recognition engine…</p>' +
+      '<p class="scan-status" id="idStatus">' + (useAi ? "🤖 Asking AI what this is…" : "Loading text-recognition engine…") + '</p>' +
       '<div id="idResults"></div>' +
       '<div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal" type="button">Close</button></div>'
     );
@@ -1115,33 +1136,62 @@
       var box = $("#idResults");
       if (!box) return;
       box.innerHTML =
+        (photoIdentified && photoIdentified.found
+          ? '<button class="btn btn-primary btn-block" data-action="photo-direct-check" type="button">✅ Check "' +
+            esc(photoIdentified.name) + '" now' + (photoIdentified.ingredients ? " (label ingredients read)" : "") + '</button>' +
+            '<p class="hint center" style="margin:0.5rem 0">…or pick an exact match for full nutrition data:</p>'
+          : "") +
         '<div class="query-row"><input type="text" id="idQuery" placeholder="Product name…" value="' + esc(query) + '" />' +
         '<button class="btn btn-primary btn-sm" data-action="photo-search" type="button">Search</button></div>' +
         '<div class="cand-list" id="candList"></div>';
     }
 
-    ensureTesseract().then(function () {
-      setStatus("Preparing your photo…");
-      return preprocessPhoto(file).catch(function () { return file; }); // OCR the raw file if preprocessing fails
-    }).then(function (input) {
-      setStatus("Reading the label… this takes a few seconds.");
-      return window.Tesseract.recognize(input, "eng");
-    }).then(function (res) {
-      var data = (res && res.data) || {};
-      var query = buildQueryFromWords(data.words, data.text);
-      if (!query) {
-        setStatus("Couldn't read any text — try a sharper, closer photo, or type the product name:");
+    function ocrIdentify() {
+      ensureTesseract().then(function () {
+        setStatus("Preparing your photo…");
+        return preprocessPhoto(file).catch(function () { return file; }); // OCR the raw file if preprocessing fails
+      }).then(function (input) {
+        setStatus("Reading the label… this takes a few seconds.");
+        return window.Tesseract.recognize(input, "eng");
+      }).then(function (res) {
+        var data = (res && res.data) || {};
+        var query = buildQueryFromWords(data.words, data.text);
+        if (!query) {
+          setStatus("Couldn't read any text — try a sharper, closer photo, or type the product name:");
+          showQueryUI("");
+          return;
+        }
+        setStatus('I read: "' + query + '" — searching… (edit it if I misread)');
+        showQueryUI(query);
+        runPhotoSearch(query);
+      }).catch(function () {
+        setStatus(navigator.onLine
+          ? "Text recognition couldn't load. Type the product name instead:"
+          : "📡 You're offline — photo identify needs a connection. Type the product name instead:");
         showQueryUI("");
+      });
+    }
+
+    if (!useAi) { ocrIdentify(); return; }
+
+    photoToDataUrl(file, 1024).then(function (dataUrl) {
+      return S.aiIdentifyPhoto(dataUrl);
+    }).then(function (id) {
+      if (!$("#idStatus")) return; // modal was closed meanwhile
+      if (!id.found) {
+        setStatus("🤖 The AI couldn't spot a food product — trying label text instead…");
+        ocrIdentify();
         return;
       }
-      setStatus('I read: "' + query + '" — searching… (edit it if I misread)');
-      showQueryUI(query);
-      runPhotoSearch(query);
+      photoIdentified = id;
+      setStatus('🤖 Looks like "' + id.name + '"' +
+        (id.confidence ? " (" + id.confidence + "% sure)" : "") + " — searching for matches…");
+      showQueryUI(id.query);
+      runPhotoSearch(id.query);
     }).catch(function () {
-      setStatus(navigator.onLine
-        ? "Text recognition couldn't load. Type the product name instead:"
-        : "📡 You're offline — photo identify needs a connection. Type the product name instead:");
-      showQueryUI("");
+      if (!$("#idStatus")) return;
+      setStatus("🤖 AI identify failed — reading the label text instead…");
+      ocrIdentify();
     });
   }
 
@@ -1353,6 +1403,20 @@
           else toast("Couldn't load that product's details.", true);
         }).catch(function () {
           toast("📡 Network error loading the product.", true);
+        });
+        break;
+      }
+
+      case "photo-direct-check": {
+        if (!photoIdentified || !photoIdentified.found) break;
+        checkProduct({
+          id: "photo-" + S.uid(),
+          name: photoIdentified.name,
+          emoji: "🖼️",
+          category: "Photo identify (AI)",
+          allergens: [],
+          ingredients: photoIdentified.ingredients || "",
+          nutrition: {}
         });
         break;
       }

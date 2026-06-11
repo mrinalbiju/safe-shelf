@@ -620,22 +620,45 @@
     });
   }
 
-  function aiChat(messages) {
+  function aiChat(messages, opts) {
+    var vision = !!(opts && opts.vision);
     return checkServerAi().then(function (hasServer) {
       var direct = function () {
         var key = getAiKey();
         if (!key) return Promise.reject(new Error("nokey"));
         return postAiRequest("https://api.groq.com/openai/v1/chat/completions",
           { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-          { model: "llama-3.3-70b-versatile", temperature: 0.2, max_tokens: 1024,
+          { model: vision ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
+            temperature: 0.2, max_tokens: 1024,
             response_format: { type: "json_object" }, messages: messages });
       };
       if (!hasServer) return direct();
-      return postAiRequest("/api/groq", { "Content-Type": "application/json" }, { messages: messages })
+      return postAiRequest("/api/groq", { "Content-Type": "application/json" }, { messages: messages, vision: vision })
         .catch(function (err) {
           // server proxy lost its key or broke mid-session — try the local key
           return getAiKey() ? direct() : Promise.reject(err);
         });
+    });
+  }
+
+  // Lens-style product identification: the photo goes to a vision model that
+  // names the product, far more reliably than OCR-ing the label text
+  function aiIdentifyPhoto(dataUrl) {
+    return aiChat([
+      { role: "user", content: [
+        { type: "text", text: "Identify the packaged food/drink product in this photo. " +
+          'Reply with strict JSON only: {"found":true|false,"name":"<brand + product name>","query":"<2-4 word product search query>","ingredients":"<comma-separated ingredients if readable on the label, else empty string>","confidence":<0-100>}. ' +
+          'Set found:false if there is no recognizable food product. Do not guess ingredients that are not visible.' },
+        { type: "image_url", image_url: { url: dataUrl } }
+      ] }
+    ], { vision: true }).then(function (d) {
+      return {
+        found: !!d.found && !!(d.name || d.query),
+        name: String(d.name || "").slice(0, 120),
+        query: String(d.query || d.name || "").slice(0, 80),
+        ingredients: String(d.ingredients || "").slice(0, 600),
+        confidence: Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0)))
+      };
     });
   }
 
@@ -729,6 +752,7 @@
     checkServerAi: checkServerAi,
     aiAvailable: aiAvailable,
     aiSuitability: aiSuitability,
+    aiIdentifyPhoto: aiIdentifyPhoto,
     searchProducts: searchProducts,
     load: load,
     save: save,
