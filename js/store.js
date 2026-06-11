@@ -672,15 +672,17 @@
     return aiChat([
       { role: "user", content: [
         { type: "text", text: "Identify the packaged food/drink product in this photo. " +
-          'Reply with strict JSON only: {"found":true|false,"name":"<brand + product name>","query":"<2-4 word product search query>","ingredients":"<comma-separated ingredients if readable on the label, else empty string>","confidence":<0-100>}. ' +
-          'Set found:false if there is no recognizable food product. Do not guess ingredients that are not visible.' },
+          'Reply with strict JSON only: {"found":true|false,"name":"<brand + product name>","query":"<2-4 word product search query>","barcode":"<EAN/UPC digits if a barcode or its number is visible in the photo, or if you reliably know this exact product\'s barcode; else empty string>","ingredients":"<comma-separated ingredients if readable on the label, else empty string>","confidence":<0-100>}. ' +
+          'Set found:false if there is no recognizable food product. Do not guess ingredients that are not visible, and never invent barcode digits.' },
         { type: "image_url", image_url: { url: dataUrl } }
       ] }
     ], { vision: true }).then(function (d) {
+      var barcode = String(d.barcode || "").replace(/\D/g, "");
       return {
         found: !!d.found && !!(d.name || d.query),
         name: String(d.name || "").slice(0, 120),
         query: String(d.query || d.name || "").slice(0, 80),
+        barcode: /^\d{8,14}$/.test(barcode) ? barcode : "",
         ingredients: String(d.ingredients || "").slice(0, 600),
         confidence: Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0)))
       };

@@ -757,6 +757,8 @@
         "<div><strong>" + esc(p.name) + "</strong><small>" + esc(p.category || "") +
         (p.source ? " · via " + esc(p.source) : "") + "</small></div></div>" +
       '<div class="verdict-banner ' + r.aggregate + '">' + verdictText(r.aggregate).split(" ")[0] + " " + bannerText + "</div>" +
+      (p.aiOnly ? '<p class="ai-only-note">🤖 AI-only result — this product wasn\'t found on Open Food Facts, so the verdict is based on the AI\'s knowledge' +
+        (p.ingredients ? " and the label text read from your photo" : "") + ". Double-check the physical label.</p>" : "") +
       '<p class="result-price" id="priceLine">' +
         (p.price != null
           ? '<span class="price-amt">' + inr(p.price) + '</span> <span class="price-note">est. MRP</span>'
@@ -1116,33 +1118,47 @@
   var photoIdentified = null; // last AI identification, for the direct-check button
 
   // The AI names the product; the real ingredient list should still come from
-  // Open Food Facts when it has the product. Best-matching candidate's full
-  // record wins; the AI's label reading is the fallback.
-  function enrichIdentifiedProduct(pid) {
-    var fallback = {
+  // Open Food Facts when it has the product. Chain: text search → barcode the
+  // AI saw in the photo → AI-only assessment, clearly labelled as such.
+  function enrichIdentifiedProduct(pid, onStep) {
+    var step = onStep || function () {};
+    var aiOnly = {
       id: "photo-" + S.uid(),
       name: pid.name,
       emoji: "🖼️",
-      category: "Photo identify (AI)",
+      category: "Photo identify",
+      source: "AI only — not found on Open Food Facts",
+      aiOnly: true,
       allergens: [],
       ingredients: pid.ingredients || "",
       nutrition: {}
     };
+    var keepAiIngredients = function (product) {
+      // OFF sometimes has the product but not its label text — keep the
+      // AI's reading rather than checking against nothing
+      if (product && !product.ingredients && pid.ingredients) product.ingredients = pid.ingredients;
+      return product;
+    };
+    var byBarcode = function () {
+      if (!pid.barcode) return Promise.resolve(null);
+      step("Name search came up empty — trying the barcode the AI read (" + pid.barcode + ")…");
+      return S.lookupBarcode(pid.barcode).then(keepAiIngredients).catch(function () { return null; });
+    };
     var words = (pid.query || pid.name).toLowerCase().split(/\s+/).filter(function (w) { return w.length > 2; });
-    return S.searchProducts(pid.query || pid.name).then(function (cands) {
+    step("Searching Open Food Facts for \"" + (pid.query || pid.name) + "\"…");
+    return S.searchProducts(pid.query || pid.name).catch(function () { return []; }).then(function (cands) {
       var match = cands.find(function (c) {
         var hay = (c.name + " " + (c.brands || "")).toLowerCase();
         return words.some(function (w) { return hay.indexOf(w) !== -1; });
       });
-      if (!match) return fallback;
-      return S.lookupBarcode(match.code).then(function (product) {
-        if (!product) return fallback;
-        // OFF sometimes has the product but not its label text — keep the
-        // AI's reading rather than checking against nothing
-        if (!product.ingredients && pid.ingredients) product.ingredients = pid.ingredients;
-        return product;
-      });
-    }).catch(function () { return fallback; });
+      if (!match) return byBarcode();
+      return S.lookupBarcode(match.code).then(keepAiIngredients).catch(function () { return null; })
+        .then(function (product) { return product || byBarcode(); });
+    }).then(function (product) {
+      if (product) return product;
+      step("Not on Open Food Facts — asking the AI to assess it directly…");
+      return aiOnly;
+    });
   }
 
   function handlePhoto(file) {
@@ -1440,9 +1456,10 @@
       case "photo-direct-check": {
         if (!photoIdentified || !photoIdentified.found) break;
         btn.disabled = true;
-        var stPh = $("#idStatus");
-        if (stPh) stPh.textContent = "Fetching the full ingredient list from Open Food Facts…";
-        enrichIdentifiedProduct(photoIdentified).then(function (product) {
+        enrichIdentifiedProduct(photoIdentified, function (msg) {
+          var stPh = $("#idStatus");
+          if (stPh) stPh.textContent = msg;
+        }).then(function (product) {
           checkProduct(product);
         });
         break;
