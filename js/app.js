@@ -361,6 +361,20 @@
     }).join("");
   }
 
+  /* =================== AI settings =================== */
+
+  function renderAiCard() {
+    var status = $("#aiStatus"), btn = $("#aiKeyBtn");
+    if (!status || !btn) return;
+    if (S.getAiKey()) {
+      status.textContent = "On — every verdict gets an AI second opinion (Llama 3.3 via Groq), and illness avoid-lists are AI-generated. Your key stays on this device only.";
+      btn.textContent = "Remove API key";
+    } else {
+      status.textContent = "Off — paste a free Groq API key (console.groq.com) to enable AI-powered suitability checks and illness avoid-lists.";
+      btn.textContent = "🔑 Set Groq API key";
+    }
+  }
+
   /* =================== tabs =================== */
 
   function showTab(name) {
@@ -573,10 +587,57 @@
     });
   }
 
+  var SEVERITY_RANK = { safe: 0, caution: 1, unsafe: 2 };
+
+  // AI second opinion: merge per-member AI verdicts into the rule-based result
+  // (AI can only make a verdict stricter, never upgrade unsafe to safe).
+  function runAiAssessment(r) {
+    r.aiState = "pending";
+    S.aiSuitability(r.product, r.perMember.map(function (m) { return m.user; })).then(function (results) {
+      if (lastResult !== r) return; // a different product was opened meanwhile
+      r.perMember.forEach(function (m, i) {
+        var ai = results.find(function (x) {
+          return x.name.toLowerCase() === m.user.name.toLowerCase();
+        }) || results[i];
+        if (!ai) return;
+        var sev = ai.status === "safe" ? "info" : ai.status;
+        if (ai.reasons.length) {
+          ai.reasons.forEach(function (txt) {
+            m.reasons.push({ kind: "ai", severity: sev, text: "🤖 " + txt });
+          });
+        } else {
+          m.reasons.push({ kind: "ai", severity: "info", text: "🤖 AI check: no concerns found" });
+        }
+        if (SEVERITY_RANK[ai.status] > SEVERITY_RANK[m.status]) m.status = ai.status;
+      });
+      r.aggregate = r.perMember.reduce(function (acc, m) {
+        return SEVERITY_RANK[m.status] > SEVERITY_RANK[acc] ? m.status : acc;
+      }, "safe");
+      r.aiState = "done";
+      if (!$("#modalBackdrop").hidden && lastResult === r) showResultModal();
+    }).catch(function (err) {
+      if (lastResult !== r) return;
+      r.aiState = (err && err.message === "badkey") ? "badkey" : "failed";
+      if (!$("#modalBackdrop").hidden && lastResult === r) showResultModal();
+    });
+  }
+
+  function aiStatusLine(r) {
+    if (!S.getAiKey()) return "";
+    var msg = {
+      pending: "🤖 AI second opinion running…",
+      done: "🤖 Verdict includes the AI assessment (Llama 3.3 via Groq).",
+      failed: "🤖 AI check failed (network or rate limit) — rule-based verdict only.",
+      badkey: "🤖 Groq key rejected — update it in the AI card on the Check tab."
+    }[r.aiState] || "";
+    return msg ? '<p class="hint" style="margin-bottom:0.7rem">' + msg + "</p>" : "";
+  }
+
   function showResultModal() {
     var r = lastResult;
     var p = r.product;
     var n = p.nutrition || {};
+    if (S.getAiKey() && !r.aiState) runAiAssessment(r);
     var nutriBits = Object.keys(S.NUTRIENT_LABELS).map(function (key) {
       if (n[key] == null) return '<span class="mini-chip">' + S.NUTRIENT_LABELS[key] + ": n/a</span>";
       var unit = key === "sodium" ? "mg" : "g";
@@ -628,6 +689,7 @@
       "</p>" +
       (alreadyIn ? '<p class="in-cart-note">🧺 This is already in your cart.</p>' : "") +
       '<div class="nutri-strip">' + nutriBits + "</div>" +
+      aiStatusLine(r) +
       membersHtml +
       '<div class="modal-actions">' +
         '<button class="btn btn-ghost" data-action="close-modal" type="button">Done</button>' +
@@ -1371,6 +1433,24 @@
     }
   });
 
+  $("#aiKeyBtn").addEventListener("click", function () {
+    if (S.getAiKey()) {
+      if (confirm("Remove the Groq API key from this device? AI checks will turn off.")) {
+        S.setAiKey("");
+        renderAiCard();
+        toast("AI checks disabled.");
+      }
+      return;
+    }
+    var key = prompt("Paste your Groq API key (starts with gsk_). It is stored only on this device:");
+    if (key === null) return;
+    key = key.trim().replace(/^["']|["']$/g, "");
+    if (!/^gsk_/.test(key)) { toast("That doesn't look like a Groq key (should start with gsk_).", true); return; }
+    S.setAiKey(key);
+    renderAiCard();
+    toast("🤖 AI checks enabled — verdicts now get a second opinion.");
+  });
+
   $("#addUserBtn").addEventListener("click", function () { openUserForm(null); });
   $("#addGroupBtn").addEventListener("click", openGroupForm);
   $("#contextPill").addEventListener("click", openSwitcher);
@@ -1389,6 +1469,7 @@
   /* =================== boot =================== */
 
   buildManualChips();
+  renderAiCard();
   renderAll();
 
   if (location.hash === "#groups") showTab("groups");

@@ -430,7 +430,7 @@
     { match: ["hemochromatosis", "haemochromatosis", "iron overload"],
       avoid: ["liver", "organ meat", "beef", "iron-fortified", "raw oyster", "raw clam"],
       source: "iron-loading foods · NIDDK guidance" },
-    { match: ["gerd", "reflux", "esophagitis", "oesophagitis", "heartburn"],
+    { match: ["gerd", "reflux", "heartburn"],
       avoid: ["chilli", "black pepper", "citrus", "orange", "lemon", "tomato", "onion", "garlic", "chocolate", "coffee", "peppermint", "fried"],
       source: "common reflux triggers · NIDDK/ACG guidance" },
     { match: ["irritable bowel", "ibs"],
@@ -513,13 +513,29 @@
     }).slice(0, 12);
   }
 
-  // Dietary guidance for ANY illness: curated table first (vetted), then
-  // auto-extraction from the condition's Wikipedia article (open data, CORS).
+  // Dietary guidance for ANY illness: curated table first (vetted), then the
+  // AI assistant when a key is configured, then Wikipedia auto-extraction.
   function fetchAvoidGuidance(name) {
-    var curated = suggestAvoidFor(name);
-    if (curated) {
-      return Promise.resolve({ avoid: curated.avoid.slice(), source: curated.source, origin: "curated" });
+    function curatedOrWiki() {
+      var curated = suggestAvoidFor(name);
+      if (curated) {
+        return Promise.resolve({ avoid: curated.avoid.slice(), source: curated.source, origin: "curated" });
+      }
+      return wikiAvoidGuidance(name);
     }
+    // With AI enabled it leads (full clinical context beats keyword tables);
+    // curated table and Wikipedia extraction remain as fallbacks.
+    if (getAiKey()) {
+      return aiAvoidList(name).then(function (g) {
+        return g.avoid.length ? g : curatedOrWiki().catch(function () { return g; });
+      }).catch(function () {
+        return curatedOrWiki();
+      });
+    }
+    return curatedOrWiki();
+  }
+
+  function wikiAvoidGuidance(name) {
     var api = "https://en.wikipedia.org/w/api.php?format=json&origin=*";
     return fetchJsonWithTimeout(api + "&action=opensearch&limit=1&search=" + encodeURIComponent(name), 10000)
       .then(function (os) {
@@ -549,6 +565,92 @@
       }
     }
     return null;
+  }
+
+  /* =================== AI integration (Groq, OpenAI-compatible) =================== */
+
+  var AI_KEY_STORE = "safeshelf_groq_key";
+  function getAiKey() {
+    try { return localStorage.getItem(AI_KEY_STORE) || ""; } catch (e) { return ""; }
+  }
+  function setAiKey(key) {
+    try {
+      if (key) localStorage.setItem(AI_KEY_STORE, key);
+      else localStorage.removeItem(AI_KEY_STORE);
+    } catch (e) { /* private mode */ }
+  }
+
+  function aiChat(messages) {
+    var key = getAiKey();
+    if (!key) return Promise.reject(new Error("nokey"));
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctrl && setTimeout(function () { ctrl.abort(); }, 25000);
+    return fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: messages
+      }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (timer) clearTimeout(timer);
+      if (res.status === 401 || res.status === 403) throw new Error("badkey");
+      if (!res.ok) throw new Error("ai " + res.status);
+      return res.json();
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
+    }).then(function (d) {
+      var content = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+      return JSON.parse(content);
+    });
+  }
+
+  // AI-generated avoid-list for an illness (label-matchable terms)
+  function aiAvoidList(illness) {
+    return aiChat([
+      { role: "system", content: "You are a clinical dietary assistant. Answer with strict JSON only." },
+      { role: "user", content: 'List the most important foods and food ingredients a person with "' + illness +
+        '" should avoid or strictly limit. Use short lowercase terms that could appear on packaged-food ingredient labels (e.g. "beef", "added sugar", "hydrogenated oil", "maida"). Reply as JSON: {"avoid": ["term", ...], "note": "one short sentence"} with at most 12 terms, most critical first. If the condition has no specific dietary restrictions, return {"avoid": [], "note": "why"}.' }
+    ]).then(function (d) {
+      var avoid = Array.isArray(d.avoid) ? d.avoid.map(function (t) { return String(t).toLowerCase().trim(); }).filter(Boolean).slice(0, 12) : [];
+      return { avoid: avoid, note: d.note || "",
+        source: "AI-generated (Llama 3.3 via Groq) — verify with your doctor", origin: "ai" };
+    });
+  }
+
+  // AI second opinion on a product for a set of profiles
+  function aiSuitability(product, users) {
+    var profiles = users.map(function (u) {
+      return {
+        name: u.name,
+        allergens: (u.allergens || []).concat(u.customAllergens || []),
+        conditions: (u.conditions || []).concat((u.customConditions || []).map(function (c) { return c.name; })),
+        lifestyle: u.lifestyle || []
+      };
+    });
+    return aiChat([
+      { role: "system", content: "You are a cautious dietary-suitability checker for packaged foods. You are not a doctor; be conservative and prefer caution when uncertain. Answer with strict JSON only." },
+      { role: "user", content: "Product: " + JSON.stringify({
+          name: product.name,
+          ingredients: product.ingredients || "not listed",
+          nutrition_per_100g: product.nutrition || {}
+        }) +
+        "\nPeople: " + JSON.stringify(profiles) +
+        '\nAssess for EACH person whether this product is dietarily suitable, considering their allergens (including hidden sources), medical conditions (apply established clinical dietary guidance), and lifestyle. Reply as JSON: {"results":[{"name":"<person name>","status":"safe"|"caution"|"unsafe","reasons":["short reason",...]}]} with at most 3 concise reasons per person. Use "unsafe" for allergen presence or clear medical conflicts, "caution" for processed-food or borderline concerns, "safe" only when confident.' }
+    ]).then(function (d) {
+      var arr = Array.isArray(d.results) ? d.results : [];
+      return arr.map(function (r) {
+        return {
+          name: String(r.name || ""),
+          status: ["safe", "caution", "unsafe"].indexOf(r.status) !== -1 ? r.status : "caution",
+          reasons: Array.isArray(r.reasons) ? r.reasons.map(String).slice(0, 3) : []
+        };
+      });
+    });
   }
 
   /* =================== Persistence (on-device, NFR-2.1) =================== */
@@ -588,6 +690,9 @@
     suggestAvoidFor: suggestAvoidFor,
     fetchAvoidGuidance: fetchAvoidGuidance,
     extractAvoidTerms: extractAvoidTerms,
+    getAiKey: getAiKey,
+    setAiKey: setAiKey,
+    aiSuitability: aiSuitability,
     searchProducts: searchProducts,
     load: load,
     save: save,
