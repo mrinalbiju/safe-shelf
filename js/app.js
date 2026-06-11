@@ -15,7 +15,11 @@
     });
   }
 
-  function persist() { S.save(state); }
+  function persist() {
+    state.updatedAt = Date.now();
+    S.save(state);
+    if (window.SafeShelfCloud) window.SafeShelfCloud.queueSync(state);
+  }
 
   function getUser(id) { return state.users.find(function (u) { return u.id === id; }); }
   function getGroup(id) { return state.groups.find(function (g) { return g.id === id; }); }
@@ -378,6 +382,46 @@
       status.textContent = "Off — paste a free Groq API key (console.groq.com) to enable AI-powered suitability checks and illness avoid-lists.";
       btn.textContent = "🔑 Set Groq API key";
     }
+  }
+
+  /* =================== account & cloud sync =================== */
+
+  function renderAccount() {
+    var box = $("#accountCard");
+    if (!box) return;
+    var cloud = window.SafeShelfCloud;
+    if (!cloud) { box.hidden = true; return; }
+    var info = cloud.getStatus();
+    box.hidden = false;
+    if (info.status === "loading") {
+      box.innerHTML = '<h2 class="card-title">🔐 Account</h2><p class="card-sub">Connecting…</p>';
+    } else if (info.status === "unavailable") {
+      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+        '<p class="card-sub">Cloud sync is unreachable right now — the app keeps working from this device\'s storage.</p>';
+    } else if (info.status === "signedin") {
+      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+        '<p class="card-sub">Signed in as <strong>' + esc(info.email) + "</strong>. Profiles, groups and carts sync to your account" +
+        (info.lastSync ? " · last synced " + timeAgo(info.lastSync) : "") + ".</p>" +
+        '<div class="user-actions">' +
+        '<button class="btn btn-ghost" data-action="acct-sync" type="button">🔄 Sync now</button>' +
+        '<button class="btn btn-danger" data-action="acct-signout" type="button">Sign out</button></div>';
+    } else {
+      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+        '<p class="card-sub">Sign in to keep your profiles across devices. Optional — everything also works without an account.</p>' +
+        '<div class="manual-form">' +
+        '<input type="email" id="acctEmail" placeholder="Email" autocomplete="email" />' +
+        '<input type="password" id="acctPass" placeholder="Password (min 6 chars)" autocomplete="current-password" style="margin-top:0.4rem" />' +
+        '<div class="user-actions" style="margin-top:0.7rem">' +
+        '<button class="btn btn-primary" data-action="acct-signin" type="button">Sign in</button>' +
+        '<button class="btn btn-ghost" data-action="acct-signup" type="button">Create account</button></div></div>';
+    }
+  }
+
+  function acctCreds() {
+    var email = ($("#acctEmail") ? $("#acctEmail").value : "").trim();
+    var pass = $("#acctPass") ? $("#acctPass").value : "";
+    if (!email || !pass) { toast("Enter email and password.", true); return null; }
+    return { email: email, pass: pass };
   }
 
   /* =================== tabs =================== */
@@ -1239,6 +1283,52 @@
         break;
       }
 
+      case "acct-signin": {
+        var c1 = acctCreds();
+        if (!c1) break;
+        btn.disabled = true;
+        window.SafeShelfCloud.signIn(c1.email, c1.pass).then(function () {
+          toast("✅ Signed in — syncing your data.");
+        }).catch(function (e) {
+          btn.disabled = false;
+          toast(e.message, true);
+        });
+        break;
+      }
+
+      case "acct-signup": {
+        var c2 = acctCreds();
+        if (!c2) break;
+        btn.disabled = true;
+        window.SafeShelfCloud.signUp(c2.email, c2.pass).then(function (outcome) {
+          if (outcome === "confirm") {
+            btn.disabled = false;
+            toast("📧 Account created — confirm via the email we sent, then sign in.", true);
+          } else {
+            toast("✅ Account created and signed in.");
+          }
+        }).catch(function (e) {
+          btn.disabled = false;
+          toast(e.message, true);
+        });
+        break;
+      }
+
+      case "acct-signout":
+        window.SafeShelfCloud.signOut().then(function () {
+          toast("Signed out. Data stays on this device.");
+        });
+        break;
+
+      case "acct-sync":
+        window.SafeShelfCloud.syncNow(state).then(function () {
+          toast("🔄 Synced.");
+          renderAccount();
+        }).catch(function (e) {
+          toast("Sync failed: " + e.message, true);
+        });
+        break;
+
       case "fix-profile": {
         var me = currentUser();
         if (!me) break;
@@ -1430,7 +1520,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
     var id = e.target && e.target.id;
-    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "find-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search" }[id];
+    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "find-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search", acctPass: "acct-signin" }[id];
     if (proxy) {
       e.preventDefault();
       var b = document.querySelector('[data-action="' + proxy + '"]');
@@ -1479,6 +1569,20 @@
     serverAiOn = hasServer;
     renderAiCard();
   });
+  if (window.SafeShelfCloud) {
+    window.SafeShelfCloud.init({
+      getLocal: function () { return state; },
+      onRemoteState: function (remote) {
+        if (!remote || !Array.isArray(remote.users)) return;
+        state = remote;
+        S.save(state); // keep remote's timestamp — no persist(), or we'd echo it straight back up
+        renderAll();
+        toast("☁️ Loaded your account data.");
+      },
+      onStatus: function () { renderAccount(); }
+    });
+  }
+  renderAccount();
   renderAll();
 
   if (location.hash === "#groups") showTab("groups");
