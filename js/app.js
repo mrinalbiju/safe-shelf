@@ -4,6 +4,17 @@
 
   var S = window.SafeShelf;
   var state = S.load();
+  var OWNER_KEY = "safeshelf_owner";
+
+  // accounts are exclusive: this empties the device copy (used when a new
+  // account signs in, and on sign-out so the next person can't see your data)
+  function resetLocalState(clearOwner) {
+    state = { users: [], groups: [], currentUserId: null, activeGroupId: null };
+    S.save(state);
+    if (clearOwner) {
+      try { localStorage.removeItem(OWNER_KEY); } catch (e) { /* private mode */ }
+    }
+  }
 
   /* =================== helpers =================== */
 
@@ -428,7 +439,8 @@
         '<button class="btn btn-danger" data-action="acct-signout" type="button">Sign out</button></div>';
     } else {
       box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
-        '<p class="card-sub">Sign in to keep your profiles, groups and carts across devices. Optional — everything also works without an account.</p>' +
+        '<p class="card-sub">Sign in to access your profiles, groups and carts. Each account\'s data is private to it — ' +
+        'anything created while signed out stays temporary on this device and is cleared when an account signs in.</p>' +
         '<a class="btn btn-primary btn-block" href="login.html">Sign in / Create account</a>';
     }
   }
@@ -1298,7 +1310,9 @@
 
       case "acct-signout":
         window.SafeShelfCloud.signOut().then(function () {
-          toast("Signed out. Data stays on this device.");
+          resetLocalState(true);
+          renderAll();
+          toast("Signed out — your data was removed from this device. It's safe in your account.");
         });
         break;
 
@@ -1555,7 +1569,9 @@
   $("#signOutBtn").addEventListener("click", function () {
     if (!window.SafeShelfCloud) return;
     window.SafeShelfCloud.signOut().then(function () {
-      toast("Signed out. Data stays on this device.");
+      resetLocalState(true);
+      renderAll();
+      toast("Signed out — your data was removed from this device. It's safe in your account.");
     });
   });
 
@@ -1582,7 +1598,6 @@
     serverAiOn = hasServer;
     renderAiCard();
   });
-  var OWNER_KEY = "safeshelf_owner";
   if (window.SafeShelfCloud) {
     window.SafeShelfCloud.init({
       getLocal: function () { return state; },
@@ -1600,12 +1615,11 @@
         toast("☁️ Loaded your account data.");
       },
       onResetState: function () {
-        // a different account signed in on this device — don't let it absorb
-        // the previous owner's profiles
-        state = { users: [], groups: [], currentUserId: null, activeGroupId: null };
-        S.save(state);
+        // sign-ins never absorb whatever was on the device; the owner marker
+        // (just set by pull) stays so this account's future edits sync up
+        resetLocalState(false);
         renderAll();
-        toast("☁️ New account — starting fresh on this device.");
+        toast("☁️ Signed in — starting fresh for this account.");
       },
       onStatus: function () { renderAccount(); }
     });

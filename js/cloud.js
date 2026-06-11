@@ -86,7 +86,12 @@
 
   function signOut() {
     if (!client) return Promise.resolve();
-    return client.auth.signOut();
+    clearTimeout(syncTimer);
+    // flush any pending edits to the account before the session goes away —
+    // the device copy is wiped on sign-out, so the cloud must hold the latest
+    var local = hooks.getLocal ? hooks.getLocal() : null;
+    var flush = session && local ? push(local).catch(function () { /* offline; account keeps its last copy */ }) : Promise.resolve();
+    return flush.then(function () { return client.auth.signOut(); });
   }
 
   // ---- sync ----
@@ -111,12 +116,12 @@
           lastSync = Date.now();
           if (hooks.onRemoteState) hooks.onRemoteState(row.payload);
           emit();
-        } else if (!row && owner && !mine) {
-          // fresh account signing in on a device that holds someone else's
-          // data: start clean instead of absorbing the previous owner's data
+        } else if (!row && !mine) {
+          // accounts are exclusive: a sign-in never absorbs data that was on
+          // the device (whether anonymous or another account's) — start clean
           if (hooks.onResetState) hooks.onResetState();
         } else if (local && (local.users.length || local.groups.length)) {
-          // device data is anonymous (first sign-in adopts it) or already ours
+          // local copy is this account's own and at least as new — push it
           return push(local);
         }
       }).catch(function () { /* offline pull is non-fatal; next change retries */ });
@@ -124,9 +129,9 @@
 
   function push(state) {
     if (!client || !session) return Promise.resolve();
-    // never write data owned by a different account into this one
+    // only this account's own data may be written into it
     var owner = hooks.getOwner ? hooks.getOwner() : null;
-    if (owner && owner !== session.user.id) return Promise.resolve();
+    if (owner !== session.user.id) return Promise.resolve();
     return client.from("user_data").upsert({
       user_id: session.user.id,
       payload: state,
