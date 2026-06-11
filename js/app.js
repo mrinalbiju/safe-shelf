@@ -1526,15 +1526,30 @@
     serverAiOn = hasServer;
     renderAiCard();
   });
+  var OWNER_KEY = "safeshelf_owner";
   if (window.SafeShelfCloud) {
     window.SafeShelfCloud.init({
       getLocal: function () { return state; },
+      getOwner: function () {
+        try { return localStorage.getItem(OWNER_KEY) || null; } catch (e) { return null; }
+      },
+      setOwner: function (id) {
+        try { localStorage.setItem(OWNER_KEY, id); } catch (e) { /* private mode */ }
+      },
       onRemoteState: function (remote) {
         if (!remote || !Array.isArray(remote.users)) return;
         state = remote;
         S.save(state); // keep remote's timestamp — no persist(), or we'd echo it straight back up
         renderAll();
         toast("☁️ Loaded your account data.");
+      },
+      onResetState: function () {
+        // a different account signed in on this device — don't let it absorb
+        // the previous owner's profiles
+        state = { users: [], groups: [], currentUserId: null, activeGroupId: null };
+        S.save(state);
+        renderAll();
+        toast("☁️ New account — starting fresh on this device.");
       },
       onStatus: function () { renderAccount(); }
     });

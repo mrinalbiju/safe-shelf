@@ -93,19 +93,30 @@
 
   function pull() {
     if (!client || !session) return Promise.resolve();
+    var me = session.user.id;
     return client.from("user_data").select("payload, updated_at")
-      .eq("user_id", session.user.id).maybeSingle()
+      .eq("user_id", me).maybeSingle()
       .then(function (res) {
         if (res.error) throw res.error;
         var local = hooks.getLocal ? hooks.getLocal() : null;
+        var owner = hooks.getOwner ? hooks.getOwner() : null;
+        var mine = owner === me;
         var localTs = (local && local.updatedAt) || 0;
         var row = res.data;
         var remoteTs = row ? new Date(row.updated_at).getTime() : 0;
-        if (row && remoteTs > localTs) {
+        if (hooks.setOwner) hooks.setOwner(me);
+        if (row && (!mine || remoteTs > localTs)) {
+          // the account's copy wins when the device data isn't this
+          // account's, or when the account copy is newer
           lastSync = Date.now();
           if (hooks.onRemoteState) hooks.onRemoteState(row.payload);
           emit();
+        } else if (!row && owner && !mine) {
+          // fresh account signing in on a device that holds someone else's
+          // data: start clean instead of absorbing the previous owner's data
+          if (hooks.onResetState) hooks.onResetState();
         } else if (local && (local.users.length || local.groups.length)) {
+          // device data is anonymous (first sign-in adopts it) or already ours
           return push(local);
         }
       }).catch(function () { /* offline pull is non-fatal; next change retries */ });
@@ -113,6 +124,9 @@
 
   function push(state) {
     if (!client || !session) return Promise.resolve();
+    // never write data owned by a different account into this one
+    var owner = hooks.getOwner ? hooks.getOwner() : null;
+    if (owner && owner !== session.user.id) return Promise.resolve();
     return client.from("user_data").upsert({
       user_id: session.user.id,
       payload: state,
