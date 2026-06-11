@@ -153,7 +153,13 @@
     var reasons = [];
     var triggers = detectTriggers(product);
     var n = product.nutrition || {};
-    var haystack = ((product.ingredients || "") + " " + (product.name || "")).toLowerCase();
+    // declared allergen tags are language-independent — fold their English
+    // synonyms into the searchable text so custom avoid terms ("milk",
+    // "wheat"…) still hit products whose ingredient list isn't in English
+    var declared = (product.allergens || []).map(function (a) {
+      return ALLERGEN_SYNONYMS[a] || a;
+    }).join(" ");
+    var haystack = ((product.ingredients || "") + " " + (product.name || "") + " " + declared).toLowerCase();
 
     // 1. Presence-based: the user's own allergen list (Priority 0)
     (user.allergens || []).forEach(function (al) {
@@ -267,6 +273,25 @@
   }
 
   /* =================== Open Food Facts lookup (FR-5.1) =================== */
+
+  // English words a declared allergen tag should answer to when matching
+  // free-text avoid terms (covers non-English ingredient lists)
+  var ALLERGEN_SYNONYMS = {
+    milk: "milk dairy lactose casein whey butter cream cheese",
+    eggs: "egg eggs albumin",
+    peanuts: "peanut peanuts groundnut",
+    treenuts: "tree nut nuts almond cashew hazelnut walnut pistachio pecan",
+    wheat: "wheat gluten maida atta barley rye semolina",
+    soy: "soy soya soybean soybeans soja lecithin",
+    fish: "fish anchovy",
+    shellfish: "shellfish prawn shrimp crab lobster crustacean",
+    sesame: "sesame til tahini gingelly",
+    celery: "celery celeriac",
+    mustard: "mustard",
+    sulphites: "sulphite sulphites sulfite sulfites sulphur dioxide sulfur",
+    lupin: "lupin lupine",
+    molluscs: "mollusc molluscs oyster mussel squid clam octopus"
+  };
 
   var OFF_TAG_MAP = {
     "en:milk": "milk", "en:eggs": "eggs", "en:peanuts": "peanuts", "en:nuts": "treenuts",
@@ -689,6 +714,7 @@
       { role: "system", content: "You are a dietary-suitability checker for foods. You are not a doctor. Only flag CONCRETE, specific conflicts between the product and a person's allergens, conditions or lifestyle. For well-known simple products (plain water, salt, fresh fruit…), reason from common knowledge — do NOT flag them merely because ingredient or nutrition data is missing. Answer with strict JSON only." },
       { role: "user", content: "Product: " + JSON.stringify({
           name: product.name,
+          declared_allergens: (product.allergens || []).length ? product.allergens : "none declared",
           ingredients: product.ingredients || "not listed",
           nutrition_per_100g: product.nutrition || {}
         }) +
