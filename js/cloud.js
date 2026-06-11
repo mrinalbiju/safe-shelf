@@ -55,12 +55,24 @@
     return m;
   }
 
-  function signUp(email, password) {
+  function signUp(email, password, redirectTo) {
     if (!client) return Promise.reject(new Error("Cloud unavailable"));
-    return client.auth.signUp({ email: email, password: password }).then(function (res) {
+    var opts = { email: email, password: password };
+    if (redirectTo) opts.options = { emailRedirectTo: redirectTo };
+    return client.auth.signUp(opts).then(function (res) {
       if (res.error) throw new Error(friendly(res.error));
-      // depending on project settings the user may need to confirm by email
+      // with email confirmation on there's no session yet — the user must
+      // click the link we just emailed them
       return res.data.session ? "signedin" : "confirm";
+    });
+  }
+
+  function resend(email, redirectTo) {
+    if (!client) return Promise.reject(new Error("Cloud unavailable"));
+    var opts = { type: "signup", email: email };
+    if (redirectTo) opts.options = { emailRedirectTo: redirectTo };
+    return client.auth.resend(opts).then(function (res) {
+      if (res.error) throw new Error(friendly(res.error));
     });
   }
 
@@ -132,6 +144,7 @@
     signUp: signUp,
     signIn: signIn,
     signOut: signOut,
+    resend: resend,
     queueSync: queueSync,
     syncNow: syncNow,
     getStatus: function () { return { status: status, email: session && session.user ? session.user.email : "", lastSync: lastSync }; }

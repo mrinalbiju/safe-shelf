@@ -407,21 +407,9 @@
         '<button class="btn btn-danger" data-action="acct-signout" type="button">Sign out</button></div>';
     } else {
       box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
-        '<p class="card-sub">Sign in to keep your profiles across devices. Optional — everything also works without an account.</p>' +
-        '<div class="manual-form">' +
-        '<input type="email" id="acctEmail" placeholder="Email" autocomplete="email" />' +
-        '<input type="password" id="acctPass" placeholder="Password (min 6 chars)" autocomplete="current-password" style="margin-top:0.4rem" />' +
-        '<div class="user-actions" style="margin-top:0.7rem">' +
-        '<button class="btn btn-primary" data-action="acct-signin" type="button">Sign in</button>' +
-        '<button class="btn btn-ghost" data-action="acct-signup" type="button">Create account</button></div></div>';
+        '<p class="card-sub">Sign in to keep your profiles, groups and carts across devices. Optional — everything also works without an account.</p>' +
+        '<a class="btn btn-primary btn-block" href="login.html">Sign in / Create account</a>';
     }
-  }
-
-  function acctCreds() {
-    var email = ($("#acctEmail") ? $("#acctEmail").value : "").trim();
-    var pass = $("#acctPass") ? $("#acctPass").value : "";
-    if (!email || !pass) { toast("Enter email and password.", true); return null; }
-    return { email: email, pass: pass };
   }
 
   /* =================== tabs =================== */
@@ -1283,37 +1271,6 @@
         break;
       }
 
-      case "acct-signin": {
-        var c1 = acctCreds();
-        if (!c1) break;
-        btn.disabled = true;
-        window.SafeShelfCloud.signIn(c1.email, c1.pass).then(function () {
-          toast("✅ Signed in — syncing your data.");
-        }).catch(function (e) {
-          btn.disabled = false;
-          toast(e.message, true);
-        });
-        break;
-      }
-
-      case "acct-signup": {
-        var c2 = acctCreds();
-        if (!c2) break;
-        btn.disabled = true;
-        window.SafeShelfCloud.signUp(c2.email, c2.pass).then(function (outcome) {
-          if (outcome === "confirm") {
-            btn.disabled = false;
-            toast("📧 Account created — confirm via the email we sent, then sign in.", true);
-          } else {
-            toast("✅ Account created and signed in.");
-          }
-        }).catch(function (e) {
-          btn.disabled = false;
-          toast(e.message, true);
-        });
-        break;
-      }
-
       case "acct-signout":
         window.SafeShelfCloud.signOut().then(function () {
           toast("Signed out. Data stays on this device.");
@@ -1520,7 +1477,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
     var id = e.target && e.target.id;
-    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "find-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search", acctPass: "acct-signin" }[id];
+    var proxy = { fCustomAl: "add-custom-al", fCustomCondName: "find-cond", fCustomCondAvoid: "add-custom-cond", idQuery: "photo-search" }[id];
     if (proxy) {
       e.preventDefault();
       var b = document.querySelector('[data-action="' + proxy + '"]');
