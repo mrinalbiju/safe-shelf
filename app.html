@@ -24,6 +24,7 @@
     <button class="context-pill" id="contextPill" type="button" title="Shopping context">
       <span id="contextPillText">No profile</span>
     </button>
+    <button class="signout-btn" id="signOutBtn" type="button" title="Sign out" hidden>⎋</button>
   </header>
 
   <main class="app-main">
@@ -60,6 +61,15 @@
       <div class="card">
         <h2 class="card-title">🤖 AI suitability <span class="beta-tag">Groq</span></h2>
         <p class="card-sub" id="aiStatus"></p>
+        <form class="barcode-row" id="aiAskForm" hidden>
+          <input type="text" id="aiAskInput" maxlength="120" placeholder="Ask about any food… e.g. peanut chikki" autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" type="submit">Ask AI</button>
+        </form>
+        <div class="ai-threshold" id="aiThresholdBox" hidden>
+          <label for="aiThreshold">Caution threshold <strong id="aiThresholdVal"></strong></label>
+          <input type="range" id="aiThreshold" min="0" max="100" step="5" />
+          <p class="hint">AI concerns scoring below this risk level are shown as notes but won't change the verdict. Raise it if results feel too picky, lower it to be extra careful.</p>
+        </div>
         <button class="btn btn-ghost btn-block" id="aiKeyBtn" type="button"></button>
       </div>
 

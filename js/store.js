@@ -663,20 +663,24 @@
       };
     });
     return aiChat([
-      { role: "system", content: "You are a cautious dietary-suitability checker for packaged foods. You are not a doctor; be conservative and prefer caution when uncertain. Answer with strict JSON only." },
+      { role: "system", content: "You are a dietary-suitability checker for foods. You are not a doctor. Only flag CONCRETE, specific conflicts between the product and a person's allergens, conditions or lifestyle. For well-known simple products (plain water, salt, fresh fruit…), reason from common knowledge — do NOT flag them merely because ingredient or nutrition data is missing. Answer with strict JSON only." },
       { role: "user", content: "Product: " + JSON.stringify({
           name: product.name,
           ingredients: product.ingredients || "not listed",
           nutrition_per_100g: product.nutrition || {}
         }) +
         "\nPeople: " + JSON.stringify(profiles) +
-        '\nAssess for EACH person whether this product is dietarily suitable, considering their allergens (including hidden sources), medical conditions (apply established clinical dietary guidance), and lifestyle. Reply as JSON: {"results":[{"name":"<person name>","status":"safe"|"caution"|"unsafe","reasons":["short reason",...]}]} with at most 3 concise reasons per person. Use "unsafe" for allergen presence or clear medical conflicts, "caution" for processed-food or borderline concerns, "safe" only when confident.' }
+        '\nAssess for EACH person whether this product is dietarily suitable, considering their allergens (including hidden sources), medical conditions (apply established clinical dietary guidance), and lifestyle. Reply as JSON: {"results":[{"name":"<person name>","status":"safe"|"caution"|"unsafe","risk":<0-100>,"reasons":["short reason",...]}]} with at most 3 concise reasons per person. "risk" is how confident you are that a genuine conflict exists: 80+ allergen presence or clear medical conflict, 40-79 likely concern, under 40 speculative or only due to missing data. Use "unsafe" for allergen presence or clear medical conflicts, "caution" for genuine borderline concerns, "safe" when no specific conflict exists.' }
     ]).then(function (d) {
       var arr = Array.isArray(d.results) ? d.results : [];
       return arr.map(function (r) {
+        var status = ["safe", "caution", "unsafe"].indexOf(r.status) !== -1 ? r.status : "caution";
+        var risk = Number(r.risk);
+        if (isNaN(risk)) risk = status === "unsafe" ? 85 : status === "caution" ? 50 : 10;
         return {
           name: String(r.name || ""),
-          status: ["safe", "caution", "unsafe"].indexOf(r.status) !== -1 ? r.status : "caution",
+          status: status,
+          risk: Math.max(0, Math.min(100, Math.round(risk))),
           reasons: Array.isArray(r.reasons) ? r.reasons.map(String).slice(0, 3) : []
         };
       });

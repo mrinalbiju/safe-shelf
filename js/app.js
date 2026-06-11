@@ -368,18 +368,34 @@
   /* =================== AI settings =================== */
 
   var serverAiOn = false;
+
+  var AI_THRESHOLD_DEFAULT = 40;
+  function aiThreshold() {
+    var t = state.settings && state.settings.aiThreshold;
+    return typeof t === "number" ? t : AI_THRESHOLD_DEFAULT;
+  }
+  function setAiThreshold(t) {
+    if (!state.settings) state.settings = {};
+    state.settings.aiThreshold = t;
+    persist();
+  }
+
   function renderAiCard() {
     var status = $("#aiStatus"), btn = $("#aiKeyBtn");
+    var askForm = $("#aiAskForm"), thrBox = $("#aiThresholdBox");
     if (!status || !btn) return;
-    if (serverAiOn) {
-      status.textContent = "On (site key) — AI checks run through this site's server; no setup needed. " +
-        (S.getAiKey() ? "Your personal key is the backup." : "");
-      btn.textContent = S.getAiKey() ? "Remove personal API key" : "🔑 Set personal key (optional backup)";
-    } else if (S.getAiKey()) {
-      status.textContent = "On — every verdict gets an AI second opinion (Llama 3.3 via Groq), and illness avoid-lists are AI-generated. Your key stays on this device only.";
-      btn.textContent = "Remove API key";
+    var on = serverAiOn || !!S.getAiKey();
+    askForm.hidden = !on;
+    thrBox.hidden = !on;
+    if (on) {
+      status.textContent = "On — every verdict gets an AI second opinion (Llama 3.3 via Groq). Ask about any food directly:";
+      $("#aiThreshold").value = aiThreshold();
+      $("#aiThresholdVal").textContent = aiThreshold();
+      btn.hidden = serverAiOn && !S.getAiKey();
+      btn.textContent = S.getAiKey() ? "Remove personal API key" : "";
     } else {
       status.textContent = "Off — paste a free Groq API key (console.groq.com) to enable AI-powered suitability checks and illness avoid-lists.";
+      btn.hidden = false;
       btn.textContent = "🔑 Set Groq API key";
     }
   }
@@ -392,6 +408,11 @@
     var cloud = window.SafeShelfCloud;
     if (!cloud) { box.hidden = true; return; }
     var info = cloud.getStatus();
+    var so = $("#signOutBtn");
+    if (so) {
+      so.hidden = info.status !== "signedin";
+      so.title = info.email ? "Sign out of " + info.email : "Sign out";
+    }
     box.hidden = false;
     if (info.status === "loading") {
       box.innerHTML = '<h2 class="card-title">🔐 Account</h2><p class="card-sub">Connecting…</p>';
@@ -637,15 +658,19 @@
           return x.name.toLowerCase() === m.user.name.toLowerCase();
         }) || results[i];
         if (!ai) return;
-        var sev = ai.status === "safe" ? "info" : ai.status;
+        // concerns below the user's risk threshold are shown as notes only
+        // and never escalate the verdict
+        var belowThreshold = ai.status !== "safe" && ai.risk < aiThreshold();
+        var sev = ai.status === "safe" || belowThreshold ? "info" : ai.status;
         if (ai.reasons.length) {
           ai.reasons.forEach(function (txt) {
-            m.reasons.push({ kind: "ai", severity: sev, text: "🤖 " + txt });
+            m.reasons.push({ kind: "ai", severity: sev,
+              text: "🤖 " + txt + (belowThreshold ? " (low risk " + ai.risk + "/100 — below your threshold)" : "") });
           });
         } else {
           m.reasons.push({ kind: "ai", severity: "info", text: "🤖 AI check: no concerns found" });
         }
-        if (SEVERITY_RANK[ai.status] > SEVERITY_RANK[m.status]) m.status = ai.status;
+        if (!belowThreshold && SEVERITY_RANK[ai.status] > SEVERITY_RANK[m.status]) m.status = ai.status;
       });
       r.aggregate = r.perMember.reduce(function (acc, m) {
         return SEVERITY_RANK[m.status] > SEVERITY_RANK[acc] ? m.status : acc;
@@ -1501,6 +1526,37 @@
     S.setAiKey(key);
     renderAiCard();
     toast("🤖 AI checks enabled — verdicts now get a second opinion.");
+  });
+
+  $("#aiAskForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var q = $("#aiAskInput").value.trim();
+    if (!q) { toast("Type a food or product to ask about.", true); return; }
+    $("#aiAskInput").value = "";
+    checkProduct({
+      id: "ask-" + S.uid(),
+      name: q,
+      emoji: "🤖",
+      category: "AI lookup",
+      allergens: [],
+      ingredients: "",
+      nutrition: {}
+    });
+  });
+
+  $("#aiThreshold").addEventListener("input", function () {
+    $("#aiThresholdVal").textContent = this.value;
+  });
+  $("#aiThreshold").addEventListener("change", function () {
+    setAiThreshold(parseInt(this.value, 10));
+    toast("AI caution threshold set to " + this.value + ".");
+  });
+
+  $("#signOutBtn").addEventListener("click", function () {
+    if (!window.SafeShelfCloud) return;
+    window.SafeShelfCloud.signOut().then(function () {
+      toast("Signed out. Data stays on this device.");
+    });
   });
 
   $("#addUserBtn").addEventListener("click", function () { openUserForm(null); });
