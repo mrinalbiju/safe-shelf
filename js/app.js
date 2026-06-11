@@ -1115,6 +1115,36 @@
 
   var photoIdentified = null; // last AI identification, for the direct-check button
 
+  // The AI names the product; the real ingredient list should still come from
+  // Open Food Facts when it has the product. Best-matching candidate's full
+  // record wins; the AI's label reading is the fallback.
+  function enrichIdentifiedProduct(pid) {
+    var fallback = {
+      id: "photo-" + S.uid(),
+      name: pid.name,
+      emoji: "🖼️",
+      category: "Photo identify (AI)",
+      allergens: [],
+      ingredients: pid.ingredients || "",
+      nutrition: {}
+    };
+    var words = (pid.query || pid.name).toLowerCase().split(/\s+/).filter(function (w) { return w.length > 2; });
+    return S.searchProducts(pid.query || pid.name).then(function (cands) {
+      var match = cands.find(function (c) {
+        var hay = (c.name + " " + (c.brands || "")).toLowerCase();
+        return words.some(function (w) { return hay.indexOf(w) !== -1; });
+      });
+      if (!match) return fallback;
+      return S.lookupBarcode(match.code).then(function (product) {
+        if (!product) return fallback;
+        // OFF sometimes has the product but not its label text — keep the
+        // AI's reading rather than checking against nothing
+        if (!product.ingredients && pid.ingredients) product.ingredients = pid.ingredients;
+        return product;
+      });
+    }).catch(function () { return fallback; });
+  }
+
   function handlePhoto(file) {
     if (!file) return;
     photoIdentified = null;
@@ -1138,8 +1168,8 @@
       box.innerHTML =
         (photoIdentified && photoIdentified.found
           ? '<button class="btn btn-primary btn-block" data-action="photo-direct-check" type="button">✅ Check "' +
-            esc(photoIdentified.name) + '" now' + (photoIdentified.ingredients ? " (label ingredients read)" : "") + '</button>' +
-            '<p class="hint center" style="margin:0.5rem 0">…or pick an exact match for full nutrition data:</p>'
+            esc(photoIdentified.name) + '" now — fetches full ingredients</button>' +
+            '<p class="hint center" style="margin:0.5rem 0">…or pick the exact match yourself:</p>'
           : "") +
         '<div class="query-row"><input type="text" id="idQuery" placeholder="Product name…" value="' + esc(query) + '" />' +
         '<button class="btn btn-primary btn-sm" data-action="photo-search" type="button">Search</button></div>' +
@@ -1409,14 +1439,11 @@
 
       case "photo-direct-check": {
         if (!photoIdentified || !photoIdentified.found) break;
-        checkProduct({
-          id: "photo-" + S.uid(),
-          name: photoIdentified.name,
-          emoji: "🖼️",
-          category: "Photo identify (AI)",
-          allergens: [],
-          ingredients: photoIdentified.ingredients || "",
-          nutrition: {}
+        btn.disabled = true;
+        var stPh = $("#idStatus");
+        if (stPh) stPh.textContent = "Fetching the full ingredient list from Open Food Facts…";
+        enrichIdentifiedProduct(photoIdentified).then(function (product) {
+          checkProduct(product);
         });
         break;
       }
