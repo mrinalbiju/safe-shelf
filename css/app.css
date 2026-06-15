@@ -470,8 +470,8 @@ input:focus, select:focus { outline: 2px solid rgba(52, 211, 153, 0.5); border-c
 .modal .sub { color: var(--muted); font-size: 0.84rem; margin-bottom: 1rem; }
 .modal .field { margin-bottom: 0.9rem; }
 .modal .field > label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.modal-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
-.modal-actions .btn { flex: 1; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.2rem; }
+.modal-actions .btn { flex: 1 1 auto; min-width: 7.5rem; }
 
 .emoji-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .emoji-pick {

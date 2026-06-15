@@ -849,6 +849,68 @@
 
   var LENS_KEY = "safeshelf_lens";
 
+  // Pull a usable GTIN out of a raw scan/decoded value. QR codes often wrap the
+  // barcode in a GS1 digital-link URL, so we grab the digit run.
+  function extractBarcodeDigits(raw) {
+    raw = String(raw || "").trim();
+    var digits = (raw.match(/\d{8,14}/) || [])[0] || "";
+    if (digits.length === 14 && digits.charAt(0) === "0") digits = digits.slice(1); // GTIN-14 → EAN-13
+    return { digits: digits, raw: raw };
+  }
+
+  // Decode a barcode/QR from a still image (gallery upload). Uses the native
+  // BarcodeDetector when present, else the ZXing decoder as a fallback.
+  function decodeBarcodeFromImage(file) {
+    if (!file) return;
+    toast("🔎 Reading barcode from image…");
+
+    var viaDetector = function () {
+      if (!("BarcodeDetector" in window) || typeof createImageBitmap !== "function") {
+        return Promise.reject(new Error("no-detector"));
+      }
+      var detector = new window.BarcodeDetector({
+        formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"]
+      });
+      return createImageBitmap(file).then(function (bmp) {
+        return detector.detect(bmp).then(function (codes) {
+          bmp.close && bmp.close();
+          if (codes && codes.length) return codes[0].rawValue;
+          throw new Error("none");
+        });
+      });
+    };
+
+    var viaZxing = function () {
+      return loadScript("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js").then(function () {
+        var reader = new window.ZXing.BrowserMultiFormatReader();
+        var url = URL.createObjectURL(file);
+        return reader.decodeFromImageUrl(url).then(function (result) {
+          URL.revokeObjectURL(url);
+          return result.getText();
+        }, function (err) {
+          URL.revokeObjectURL(url);
+          throw err;
+        });
+      });
+    };
+
+    viaDetector().catch(viaZxing).then(function (raw) {
+      var r = extractBarcodeDigits(raw);
+      if (r.digits) {
+        closeModal(); // dismiss the scanner if it was open
+        $("#barcodeInput").value = r.digits;
+        toast("📁 Found " + r.digits);
+        doBarcodeLookup(r.digits);
+      } else if (r.raw) {
+        toast("Read \"" + r.raw.slice(0, 60) + "\" — no product barcode in it.", true);
+      } else {
+        toast("Couldn't find a barcode in that image — try a clearer, closer crop, or type it manually.", true);
+      }
+    }).catch(function () {
+      toast("Couldn't read a barcode from that image — try a sharper, closer photo of just the barcode, or type it manually.", true);
+    });
+  }
+
   // Rank rear lenses: main camera first, tele/zoom/macro/depth last
   function lensScore(device) {
     var l = (device.label || "").toLowerCase();
@@ -868,6 +930,7 @@
       '<p class="scan-status" id="scanStatus">Starting camera…</p>' +
       '<div class="modal-actions">' +
       '<button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button>' +
+      '<button class="btn btn-ghost" id="galleryBtn" type="button">📁 Gallery</button>' +
       '<button class="btn btn-ghost" id="lensBtn" type="button" hidden>🔄 Switch lens</button>' +
       "</div>"
     );
@@ -889,19 +952,18 @@
 
     function finish(raw) {
       if (stopped) return;
-      raw = String(raw || "").trim();
-      // QR codes often wrap the GTIN in a URL (GS1 digital link) — pull out the digits
-      var digits = (raw.match(/\d{8,14}/) || [])[0] || "";
-      if (digits.length === 14 && digits.charAt(0) === "0") digits = digits.slice(1); // GTIN-14 → EAN-13
+      var r = extractBarcodeDigits(raw);
       closeModal();
-      if (digits) {
-        $("#barcodeInput").value = digits;
-        toast("📷 Scanned " + digits);
-        doBarcodeLookup(digits);
-      } else if (raw) {
-        toast("Scanned: \"" + raw.slice(0, 60) + "\" — no product barcode found in it.", true);
+      if (r.digits) {
+        $("#barcodeInput").value = r.digits;
+        toast("📷 Scanned " + r.digits);
+        doBarcodeLookup(r.digits);
+      } else if (r.raw) {
+        toast("Scanned: \"" + r.raw.slice(0, 60) + "\" — no product barcode found in it.", true);
       }
     }
+
+    $("#galleryBtn").addEventListener("click", function () { $("#barcodeImgInput").click(); });
 
     function startStream(deviceId) {
       stopStream();
@@ -1689,6 +1751,12 @@
   $("#addGroupBtn").addEventListener("click", openGroupForm);
   $("#contextPill").addEventListener("click", openSwitcher);
   $("#scanBtn").addEventListener("click", openScanner);
+  $("#barcodeUploadBtn").addEventListener("click", function () { $("#barcodeImgInput").click(); });
+  $("#barcodeImgInput").addEventListener("change", function () {
+    var f = this.files && this.files[0];
+    this.value = ""; // let the same file be re-picked later
+    if (f) decodeBarcodeFromImage(f);
+  });
   $("#photoBtn").addEventListener("click", function () { $("#photoInput").click(); });
   $("#photoInput").addEventListener("change", function () {
     handlePhoto(this.files && this.files[0]);

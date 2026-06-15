@@ -36,6 +36,8 @@
         <h2 class="card-title">🔎 Barcode / QR scanner</h2>
         <p class="card-sub">Scan the code with your camera, or type it. Live data from Open Food Facts (try <button type="button" class="link-btn" data-barcode="3017624010701">3017624010701</button> or <button type="button" class="link-btn" data-barcode="5000159484695">5000159484695</button>).</p>
         <button class="btn btn-primary btn-block" id="scanBtn" type="button">📷 Scan barcode / QR with camera</button>
+        <input type="file" id="barcodeImgInput" accept="image/*" hidden />
+        <button class="btn btn-ghost btn-block" id="barcodeUploadBtn" type="button">📁 Upload barcode image from gallery</button>
         <form class="barcode-row" id="barcodeForm">
           <input type="text" id="barcodeInput" inputmode="numeric" placeholder="…or enter barcode manually" autocomplete="off" />
           <button class="btn btn-ghost btn-sm" type="submit" id="barcodeBtn">Look up</button>
