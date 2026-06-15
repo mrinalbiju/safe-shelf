@@ -514,7 +514,7 @@
         '<div class="custom-add"><input type="text" id="fCustomCondName" maxlength="60" placeholder="Other illness, e.g. gout" />' +
         '<button type="button" class="btn btn-ghost" data-action="find-cond">🔍 Find</button></div>' +
         '<div class="cand-list" id="fCondResults"></div>' +
-        '<p class="hint" id="fCondNote">Tap Find — I\'ll recognise the illness via the NIH ICD-10 catalogue, then fetch foods-to-avoid from curated clinical guidance or the condition\'s Wikipedia article.</p>' +
+        '<p class="hint" id="fCondNote">Tap Find — I\'ll recognise the illness via the WHO ICD-11 catalogue, then fetch foods-to-avoid from curated clinical guidance or the condition\'s Wikipedia article.</p>' +
         '<div class="custom-add"><input type="text" id="fCustomCondAvoid" maxlength="200" placeholder="Ingredients to avoid (comma-separated), e.g. anchovy, liver" />' +
         '<button type="button" class="btn btn-ghost" data-action="add-custom-cond">＋ Add</button></div></div>' +
         '<p class="hint">⚠️ The avoid-list is what gets checked — without it, products can\'t be auto-screened for this illness and will show "needs a closer look".</p>' +
@@ -1337,19 +1337,20 @@
         var resBox = $("#fCondResults");
         var noteEl = $("#fCondNote");
         if (!term) { toast("Type an illness name first.", true); break; }
-        resBox.innerHTML = '<span class="hint">Searching the NIH ICD-10 catalogue…</span>';
+        resBox.innerHTML = '<span class="hint">Searching the WHO ICD-11 catalogue…</span>';
         S.searchConditions(term).then(function (matches) {
           if (!resBox.isConnected) return;
+          var cat = S.conditionCatalogue();
           if (!matches.length) {
             resBox.innerHTML = "";
             applyCondGuidance(term, noteEl,
-              "Not in the ICD-10 catalogue and no guidance found — check the spelling or add avoid terms manually.");
+              "Not in the " + cat.name + " catalogue and no guidance found — check the spelling or add avoid terms manually.");
             return;
           }
           resBox.innerHTML = matches.map(function (m) {
             return '<button type="button" class="cand" data-action="pick-cond" data-name="' + esc(m.name) + '">' +
               '<span class="cand-ph">🩺</span><span><strong>' + esc(m.name) + "</strong>" +
-              "<small>ICD-10-CM " + esc(m.code) + " · NIH/NLM</small></span></button>";
+              "<small>" + esc(cat.code) + (m.code ? " " + esc(m.code) : "") + " · " + esc(cat.source) + "</small></span></button>";
           }).join("");
           noteEl.textContent = "Tap the matching condition:";
         }).catch(function () {
@@ -1366,7 +1367,7 @@
         $("#fCustomCondName").value = picked;
         $("#fCondResults").innerHTML = "";
         applyCondGuidance(picked, $("#fCondNote"),
-          "📡 Recognised via NIH ICD-10, but couldn't fetch dietary guidance — add your own terms.");
+          "📡 Recognised via " + S.conditionCatalogue().name + ", but couldn't fetch dietary guidance — add your own terms.");
         break;
       }
 

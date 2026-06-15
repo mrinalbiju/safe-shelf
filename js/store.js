@@ -424,8 +424,9 @@
 
   /* =================== Illness recognition & avoid-list guidance =================== */
 
-  // NIH/NLM Clinical Tables — public ICD-10-CM autocomplete API (no key, CORS-enabled)
-  function searchConditions(term) {
+  // NIH/NLM Clinical Tables — public ICD-10-CM autocomplete API (no key,
+  // CORS-enabled). Kept as the offline/unconfigured fallback for ICD-11.
+  function searchConditionsICD10(term) {
     var url = "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&maxList=7&terms=" +
       encodeURIComponent(term);
     return fetchJsonWithTimeout(url, 10000).then(function (d) {
@@ -440,6 +441,39 @@
           return true;
         });
     });
+  }
+
+  // WHO ICD-11 via the /api/icd11 server proxy (credentials live in Vercel env
+  // vars). Probed once per session; if the proxy is missing (e.g. opened over
+  // file://) or unconfigured, transparently falls back to the keyless ICD-10
+  // service so condition autocomplete always works.
+  var icd11Server = null; // null = not probed yet
+  function checkIcd11() {
+    if (icd11Server !== null) return Promise.resolve(icd11Server);
+    return fetchJsonWithTimeout("/api/icd11", 6000).then(function (d) {
+      icd11Server = !!(d && d.hasCreds);
+      return icd11Server;
+    }).catch(function () {
+      icd11Server = false;
+      return false;
+    });
+  }
+
+  function searchConditions(term) {
+    return checkIcd11().then(function (ok) {
+      if (!ok) return searchConditionsICD10(term);
+      return fetchJsonWithTimeout("/api/icd11?q=" + encodeURIComponent(term), 10000)
+        .then(function (d) { return (d && d.results) || []; })
+        // a mid-session hiccup shouldn't break autocomplete — fall back
+        .catch(function () { return searchConditionsICD10(term); });
+    });
+  }
+
+  // which catalogue the last/next lookup uses, for honest UI labels
+  function conditionCatalogue() {
+    return icd11Server === false
+      ? { code: "ICD-10-CM", source: "NIH/NLM", name: "NIH ICD-10" }
+      : { code: "ICD-11", source: "WHO", name: "WHO ICD-11" };
   }
 
   // Curated avoid-food guidance per condition, distilled from clinical sources
@@ -772,6 +806,7 @@
     lookupBarcode: lookupBarcode,
     fetchPrice: fetchPrice,
     searchConditions: searchConditions,
+    conditionCatalogue: conditionCatalogue,
     suggestAvoidFor: suggestAvoidFor,
     fetchAvoidGuidance: fetchAvoidGuidance,
     extractAvoidTerms: extractAvoidTerms,
