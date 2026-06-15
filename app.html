@@ -23,7 +23,7 @@
     <button class="context-pill" id="contextPill" type="button" title="Shopping context">
       <span id="contextPillText">No profile</span>
     </button>
-    <button class="signout-btn" id="signOutBtn" type="button" title="Sign out" hidden>⎋</button>
+    <button class="signout-btn" id="signOutBtn" type="button" title="Sign out" aria-label="Sign out" hidden><svg class="icon icon-sm" aria-hidden="true"><use href="#i-logout"/></svg></button>
   </header>
 
   <main class="app-main">
@@ -33,11 +33,11 @@
       <div class="context-banner" id="checkContext"></div>
 
       <div class="card">
-        <h2 class="card-title">🔎 Barcode / QR scanner</h2>
+        <h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg></span>Barcode / QR scanner</h2>
         <p class="card-sub">Scan the code with your camera, or type it. Live data from Open Food Facts (try <button type="button" class="link-btn" data-barcode="3017624010701">3017624010701</button> or <button type="button" class="link-btn" data-barcode="5000159484695">5000159484695</button>).</p>
-        <button class="btn btn-primary btn-block" id="scanBtn" type="button">📷 Scan barcode / QR with camera</button>
+        <button class="btn btn-primary btn-block" id="scanBtn" type="button"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg>Scan barcode / QR with camera</button>
         <input type="file" id="barcodeImgInput" accept="image/*" hidden />
-        <button class="btn btn-ghost btn-block" id="barcodeUploadBtn" type="button">📁 Upload barcode image from gallery</button>
+        <button class="btn btn-ghost btn-block" id="barcodeUploadBtn" type="button"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Upload barcode image from gallery</button>
         <form class="barcode-row" id="barcodeForm">
           <input type="text" id="barcodeInput" inputmode="numeric" placeholder="…or enter barcode manually" autocomplete="off" />
           <button class="btn btn-ghost btn-sm" type="submit" id="barcodeBtn">Look up</button>
@@ -46,21 +46,21 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">🖼️ Photo identify <span class="beta-tag">beta</span></h2>
+        <h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-image"/></svg></span>Photo identify <span class="beta-tag">beta</span></h2>
         <p class="card-sub">Like Google Lens — snap the front of the pack. AI identifies the product from the photo (falls back to label-text reading).</p>
         <input type="file" id="photoInput" accept="image/*" capture="environment" hidden />
-        <button class="btn btn-primary btn-block" id="photoBtn" type="button">📸 Take / choose a photo</button>
+        <button class="btn btn-primary btn-block" id="photoBtn" type="button"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg>Take / choose a photo</button>
         <p class="hint" id="photoStatus"></p>
       </div>
 
       <div class="card">
-        <h2 class="card-title">🛍️ Demo shelf</h2>
+        <h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-bag"/></svg></span>Demo shelf</h2>
         <p class="card-sub">Tap any product to check it for the active profile or group.</p>
         <div class="shelf-grid" id="shelfGrid"></div>
       </div>
 
       <div class="card">
-        <h2 class="card-title">🤖 AI suitability <span class="beta-tag">Groq</span></h2>
+        <h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>AI suitability <span class="beta-tag">Groq</span></h2>
         <p class="card-sub" id="aiStatus"></p>
         <form class="barcode-row" id="aiAskForm" hidden>
           <input type="text" id="aiAskInput" maxlength="120" placeholder="Ask about any food… e.g. peanut chikki" autocomplete="off" />
@@ -75,7 +75,7 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">✍️ Manual entry</h2>
+        <h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></span>Manual entry</h2>
         <p class="card-sub">Product not found? Enter what's on the label (per 100g).</p>
         <form id="manualForm" class="manual-form">
           <input type="text" id="mName" placeholder="Product name" required autocomplete="off" />
@@ -113,17 +113,17 @@
       <div class="context-banner" id="groupsContext"></div>
       <div id="groupsList" class="stack"></div>
       <button class="btn btn-primary btn-block" id="addGroupBtn" type="button">＋ New group buy</button>
-      <p class="hint center">🔒 Inside a group, member allergens &amp; illnesses are read-only.
+      <p class="hint center"><svg class="icon icon-sm" aria-hidden="true" style="vertical-align:-3px"><use href="#i-lock"/></svg> Inside a group, member allergens &amp; illnesses are read-only.
         Only the member themselves can change them — the group updates instantly.</p>
     </section>
   </main>
 
   <!-- ===== Bottom nav ===== -->
   <nav class="bottom-nav" aria-label="Main">
-    <button type="button" class="nav-item active" data-tab="check"><span>🔍</span>Check</button>
-    <button type="button" class="nav-item" data-tab="cart"><span>🧺<b class="nav-badge" id="cartBadge" hidden></b></span>Cart</button>
-    <button type="button" class="nav-item" data-tab="profiles"><span>👥</span>Profiles</button>
-    <button type="button" class="nav-item" data-tab="groups"><span>🛒</span>Group&nbsp;Buy</button>
+    <button type="button" class="nav-item active" data-tab="check"><span><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></span>Check</button>
+    <button type="button" class="nav-item" data-tab="cart"><span><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><b class="nav-badge" id="cartBadge" hidden></b></span>Cart</button>
+    <button type="button" class="nav-item" data-tab="profiles"><span><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></span>Profiles</button>
+    <button type="button" class="nav-item" data-tab="groups"><span><svg class="icon" aria-hidden="true"><use href="#i-bag"/></svg></span>Group&nbsp;Buy</button>
   </nav>
 
   <!-- ===== Modal shell ===== -->
@@ -134,6 +134,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/icons.js"></script>
   <script src="js/store.js"></script>
   <script src="js/cloud.js"></script>
   <script src="js/app.js"></script>

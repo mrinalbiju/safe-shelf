@@ -427,19 +427,19 @@
     }
     box.hidden = false;
     if (info.status === "loading") {
-      box.innerHTML = '<h2 class="card-title">🔐 Account</h2><p class="card-sub">Connecting…</p>';
+      box.innerHTML = '<h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>Account</h2><p class="card-sub">Connecting…</p>';
     } else if (info.status === "unavailable") {
-      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+      box.innerHTML = '<h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>Account</h2>' +
         '<p class="card-sub">Cloud sync is unreachable right now — the app keeps working from this device\'s storage.</p>';
     } else if (info.status === "signedin") {
-      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+      box.innerHTML = '<h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>Account</h2>' +
         '<p class="card-sub">Signed in as <strong>' + esc(info.email) + "</strong>. Profiles, groups and carts sync automatically — changes from your other devices appear live" +
         (info.lastSync ? " · last synced " + timeAgo(info.lastSync) : "") + ".</p>" +
         '<div class="user-actions">' +
         '<button class="btn btn-ghost" data-action="acct-sync" type="button">🔄 Sync now</button>' +
         '<button class="btn btn-danger" data-action="acct-signout" type="button">Sign out</button></div>';
     } else {
-      box.innerHTML = '<h2 class="card-title">🔐 Account</h2>' +
+      box.innerHTML = '<h2 class="card-title"><span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>Account</h2>' +
         '<p class="card-sub">Sign in to access your profiles, groups and carts. Each account\'s data is private to it — ' +
         'anything created while signed out stays temporary on this device and is cleared when an account signs in.</p>' +
         '<a class="btn btn-primary btn-block" href="login.html">Sign in / Create account</a>';
@@ -641,8 +641,15 @@
     showResultModal();
   }
 
+  var VERDICT_ICON = { safe: "check", caution: "alert", unsafe: "ban" };
+  function verdictLabel(status) {
+    return status === "safe" ? "Safe" : status === "caution" ? "Check first" : "Not suitable";
+  }
+  function verdictIcon(status, cls) {
+    return window.icon ? window.icon(VERDICT_ICON[status] || "alert", cls) : "";
+  }
   function verdictText(status) {
-    return status === "safe" ? "✅ Safe" : status === "caution" ? "⚠️ Check first" : "⛔ Not suitable";
+    return verdictIcon(status) + verdictLabel(status);
   }
 
   // market-price lookups, cached per barcode for the session
@@ -756,7 +763,7 @@
           : '<span class="result-emoji">' + p.emoji + "</span>") +
         "<div><strong>" + esc(p.name) + "</strong><small>" + esc(p.category || "") +
         (p.source ? " · via " + esc(p.source) : "") + "</small></div></div>" +
-      '<div class="verdict-banner ' + r.aggregate + '">' + verdictText(r.aggregate).split(" ")[0] + " " + bannerText + "</div>" +
+      '<div class="verdict-banner ' + r.aggregate + '">' + verdictIcon(r.aggregate) + "<span>" + bannerText + "</span></div>" +
       (p.aiOnly ? '<p class="ai-only-note">🤖 AI-only result — this product wasn\'t found on Open Food Facts, so the verdict is based on the AI\'s knowledge' +
         (p.ingredients ? " and the label text read from your photo" : "") + ". Double-check the physical label.</p>" : "") +
       '<p class="result-price" id="priceLine">' +
