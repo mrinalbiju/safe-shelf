@@ -117,6 +117,17 @@
   ];
 
   var NUTRIENT_LABELS = { sugar: "Sugar", sodium: "Sodium", satFat: "Saturated fat", protein: "Protein" };
+
+  // UK FSA front-of-pack "high" levels per 100g — a neutral public-health
+  // standard. Used to flag custom illnesses whose avoid-list already names a
+  // nutrient as a concern but only as text the ingredient list won't contain
+  // verbatim (e.g. "added sugar" vs a 56.8g sugar number).
+  var NUTRIENT_HIGH = { sugar: 22.5, sodium: 600, satFat: 5 };
+  var NUTRIENT_HINTS = [
+    { nutrient: "sugar",  label: "sugar",         re: /sugar|sweeten|fructose|glucose|sucrose|syrup|honey|molasses|jaggery/ },
+    { nutrient: "sodium", label: "sodium / salt", re: /sodium|salt|saline|brine/ },
+    { nutrient: "satFat", label: "saturated fat", re: /saturat|hydrogenat|trans[\s-]?fat/ }
+  ];
   var EMOJIS = ["😀", "😎", "🧕", "👧", "👦", "👨", "👩", "🧑", "👵", "👴", "🦸", "🐯", "🐼", "🦊", "🐨"];
 
   /* =================== Evaluation engine =================== */
@@ -211,6 +222,26 @@
             text: "🩺 " + cc.name + " (custom) — contains " + term });
         }
       });
+
+      // Numeric check: if the avoid-list names a nutrient as a concern, also
+      // test the product's actual amount against the FSA "high" level — so a
+      // high-sugar product is flagged even when the literal words aren't on the
+      // ingredient list.
+      var sensitive = {};
+      avoid.forEach(function (term) {
+        var t = String(term).toLowerCase();
+        NUTRIENT_HINTS.forEach(function (h) { if (h.re.test(t)) sensitive[h.nutrient] = h.label; });
+      });
+      Object.keys(sensitive).forEach(function (nut) {
+        var val = n[nut];
+        if (val == null || val < NUTRIENT_HIGH[nut]) return;
+        hit = true;
+        var unit = nut === "sodium" ? "mg" : "g";
+        reasons.push({ kind: "condition", severity: "unsafe",
+          text: "🩺 " + cc.name + " — high " + sensitive[nut] + " (" + val + unit + "/100g, above the " +
+            NUTRIENT_HIGH[nut] + unit + " 'high' level) and your avoid-list flags it" });
+      });
+
       if (!hit) {
         reasons.push({ kind: "condition", severity: "info",
           text: "🩺 " + cc.name + " — checked against your avoid-list (" + avoid.join(", ") + "), no matches." });
