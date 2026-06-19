@@ -1,4 +1,4 @@
-# 🛡️ Safe Shelf
+# Safe Shelf
 
 **Scan smarter. Shop safer.** A mobile-first web app based on the *Safe Shelf* SRS (Team 01, UST Internship) — allergen & health-aware product checking for individuals, families, and group purchases.
 
